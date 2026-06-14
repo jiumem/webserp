@@ -118,6 +118,23 @@ webserp "新能源汽车 新闻" --engines bing_cn,baidu,sogou,sogou_weixin --ma
 
 Anti-bot or verification pages are reported through `unresponsive_engines`. webserp does not solve CAPTCHAs, bypass verification, use proxy pools, or crawl linked page bodies.
 
+## Request safety
+
+webserp is intended for low-volume local agent search, not bulk scraping. Its fetch layer:
+
+- Allows only `http` and `https` URLs.
+- Provides best-effort DNS checks for future user-supplied URL fetches to block localhost, private/internal, link-local, reserved, and multicast addresses.
+- Validates redirect targets hop by hop in URL safety mode to prevent public URLs from redirecting to internal addresses.
+- Skips DNS SSRF checks for built-in search engine URLs because those URLs are fixed by code and local fake-ip DNS/proxy setups commonly map public domains to reserved ranges.
+- Caps response bodies at 5MB.
+- Keeps a stable browser impersonation profile per engine inside one search run.
+- Does not retry `429` rate-limit responses.
+- Retries `5xx` transient server responses at most once.
+- Does not retry CAPTCHA, security verification, consent wall, or challenge pages.
+- Reports blocked URLs, oversized bodies, HTTP errors, timeouts, and challenge pages through `unresponsive_engines`.
+
+The DNS guard is a local-agent safety check for user URLs, not full DNS pinning. Do not use webserp to bypass anti-bot systems.
+
 ## Tips
 
 - Use `--max-results 5` to keep output concise when you just need a few links

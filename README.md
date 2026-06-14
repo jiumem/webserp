@@ -6,10 +6,11 @@ Like `grep` for the web. Searches Google, DuckDuckGo, Brave, Yahoo, Mojeek, Star
 
 ## Why webserp?
 
-Most search scraping tools get rate-limited and blocked because they use standard HTTP libraries. webserp uses [curl_cffi](https://github.com/lexiforest/curl_cffi) to impersonate real browsers (Chrome TLS/JA3 fingerprints), making requests indistinguishable from a human browsing.
+Most search scraping tools get rate-limited and blocked because they use standard HTTP libraries. webserp uses [curl_cffi](https://github.com/lexiforest/curl_cffi) to send browser-like requests with Chrome TLS/JA3 fingerprints.
 
 - **12 search engines** available
-- **Browser impersonation** via curl_cffi — bypasses bot detection
+- **Browser-like requests** via curl_cffi with stable per-search impersonation profiles
+- **Local-agent safety checks** for HTTP(S) URLs, private/internal destinations, response size, and challenge pages
 - **Fault tolerant** — if one engine fails, others still return results
 - **SearXNG-compatible JSON** output format
 - **No API keys** — scrapes search engine HTML directly
@@ -28,7 +29,7 @@ pip install webserp
 webserp "how to deploy docker containers"
 
 # Search specific engines
-webserp "python async tutorial" --engines google,brave,duckduckgo
+webserp "python async tutorial" --engines brave,yahoo,presearch
 
 # Search Chinese engines
 webserp "新能源汽车 新闻" --engines bing_cn,baidu,sogou,sogou_weixin
@@ -97,9 +98,24 @@ webserp "新能源汽车 新闻" --engines bing_cn,baidu,sogou,sogou_weixin --ma
 
 webserp 会识别常见验证码、安全验证、`antispider`、异常访问等页面，并把对应引擎放入 `unresponsive_engines`。它不会识别验证码、绕过反爬、使用代理池或批量抓取正文。
 
+## 请求安全
+
+webserp 面向本地 Agent 按需搜索场景，默认采用温和请求策略：
+
+- 只允许请求 `http` / `https` URL。
+- 安全模块支持 best-effort DNS 校验，可用于后续用户 URL 抓取能力，阻止 localhost、内网地址、链路本地地址、保留地址、组播地址等内部目标。
+- 用户 URL 安全模式会逐跳校验重定向目标，避免公网 URL 跳转到内部地址。
+- 内置搜索引擎 URL 是代码固定的公网域名，不是用户输入；搜索路径会跳过 DNS SSRF 校验，以兼容本地 fake-ip DNS/代理环境。
+- 响应体默认限制为 5MB，避免异常响应或压缩炸弹拖垮进程。
+- 一次 `search()` 内每个 engine 使用稳定的浏览器 impersonation profile，避免单次任务内反复抖动指纹。
+- `429` 不重试；`5xx` 等临时服务端错误最多重试一次；验证码/安全验证/challenge 页面不重试。
+- 常见 challenge、consent wall、JS-only 空壳页会进入 `unresponsive_engines`，不会伪装成成功结果。
+
+DNS 校验是面向用户 URL 抓取的本地 Agent 安全防线，不是完整 DNS pinning；HTTP 传输层仍可能自行解析域名。webserp 不绕过验证码、不使用代理池、不做浏览器渲染。
+
 ## For OpenClaw and AI agents
 
-**Built for AI agents.** Tools like [OpenClaw](https://github.com/openclaw/openclaw) and other AI agents need reliable web search without API keys or rate limits. webserp uses [curl_cffi](https://github.com/lexiforest/curl_cffi) to mimic real browser fingerprints — results like a browser, speed like an API. It queries 7 engines in parallel, so even if one gets rate-limited, results still come back.
+**Built for AI agents.** Tools like [OpenClaw](https://github.com/openclaw/openclaw) and other AI agents need reliable web search without API keys. webserp uses [curl_cffi](https://github.com/lexiforest/curl_cffi) to send browser-like requests and queries multiple engines in parallel, so if one engine fails others can still return results.
 
 ### Why a CLI tool instead of a Python library?
 
@@ -117,7 +133,7 @@ A CLI tool keeps web search out of the agent's process. The agent calls `webserp
 webserp "latest python 3.14 release date" --max-results 5
 
 # Searching multiple engines for diverse results
-webserp "docker networking troubleshooting" --engines google,brave,duckduckgo --max-results 3
+webserp "docker networking troubleshooting" --engines brave,yahoo,presearch --max-results 3
 
 # Quick search with verbose to see which engines responded
 webserp "CVE-2024 critical vulnerabilities" --verbose --max-results 5

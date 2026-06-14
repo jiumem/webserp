@@ -5,7 +5,7 @@ import sys
 
 from curl_cffi.requests import AsyncSession
 
-from .client import fetch, random_impersonate
+from .client import FetchContext, fetch
 from .engines import ALL_ENGINES, DEFAULT_ENGINES, Result
 from .engines.base import RequestSpec
 from .engines.duckduckgo import DuckDuckGo
@@ -19,7 +19,7 @@ async def _fetch_engine(
     max_results: int,
     timeout: int,
     proxy: str | None,
-    session: AsyncSession,
+    context: FetchContext,
 ) -> tuple[str, list[Result], str | None]:
     """Fetch results from a single engine. Returns (engine_name, results, error)."""
     try:
@@ -27,9 +27,9 @@ async def _fetch_engine(
 
         # Multi-step engines (DDG, Startpage, Presearch)
         if isinstance(spec, list):
-            text = await _fetch_multistep(engine, spec, timeout, proxy, session)
+            text = await _fetch_multistep(engine, spec, timeout, proxy, context)
         else:
-            text = await _do_fetch(spec, timeout, proxy, session)
+            text = await _do_fetch(engine, spec, timeout, proxy, context)
 
         results = engine.parse_response(text)
         return engine.name, results[:max_results], None
@@ -39,10 +39,11 @@ async def _fetch_engine(
 
 
 async def _do_fetch(
+    engine,
     spec: RequestSpec,
     timeout: int,
     proxy: str | None,
-    session: AsyncSession,
+    context: FetchContext,
 ) -> str:
     return await fetch(
         spec.url,
@@ -53,7 +54,8 @@ async def _do_fetch(
         cookies=spec.cookies or None,
         timeout=timeout,
         proxy=proxy,
-        session=session,
+        context=context,
+        profile_key=engine.name,
     )
 
 
@@ -62,34 +64,34 @@ async def _fetch_multistep(
     specs: list[RequestSpec],
     timeout: int,
     proxy: str | None,
-    session: AsyncSession,
+    context: FetchContext,
 ) -> str:
     if isinstance(engine, DuckDuckGo):
         # Step 1: just POST directly, DDG HTML endpoint works without vqd for basic queries
-        return await _do_fetch(specs[1], timeout, proxy, session)
+        return await _do_fetch(engine, specs[1], timeout, proxy, context)
 
     elif isinstance(engine, Startpage):
         # Step 1: Get sc token
-        homepage = await _do_fetch(specs[0], timeout, proxy, session)
+        homepage = await _do_fetch(engine, specs[0], timeout, proxy, context)
         sc = Startpage.extract_sc_token(homepage)
         if sc:
             specs[1].data["sc"] = sc
         # Step 2: Search
-        return await _do_fetch(specs[1], timeout, proxy, session)
+        return await _do_fetch(engine, specs[1], timeout, proxy, context)
 
     elif isinstance(engine, Presearch):
         # Step 1: Get search ID
-        init_html = await _do_fetch(specs[0], timeout, proxy, session)
+        init_html = await _do_fetch(engine, specs[0], timeout, proxy, context)
         search_id = Presearch.extract_search_id(init_html)
         if not search_id:
             raise ValueError("Could not extract Presearch searchId")
         # Step 2: Fetch results
         specs[1].params["id"] = search_id
-        return await _do_fetch(specs[1], timeout, proxy, session)
+        return await _do_fetch(engine, specs[1], timeout, proxy, context)
 
     else:
         # Fallback: just fetch last spec
-        return await _do_fetch(specs[-1], timeout, proxy, session)
+        return await _do_fetch(engine, specs[-1], timeout, proxy, context)
 
 
 async def search(
@@ -113,8 +115,13 @@ async def search(
     all_results: list[Result] = []
 
     async with AsyncSession() as session:
+        # Engine URLs are fixed by code, not user supplied. Keep body caps,
+        # challenge detection, status handling, and stable profiles here; reserve
+        # DNS SSRF checks for future user-supplied URL fetches so local fake-ip
+        # DNS/proxy setups do not block normal search engines.
+        context = FetchContext(session=session, validate_urls=False)
         tasks = [
-            _fetch_engine(engine, query, max_results, timeout, proxy, session)
+            _fetch_engine(engine, query, max_results, timeout, proxy, context)
             for engine in engines_to_use.values()
         ]
         outcomes = await asyncio.gather(*tasks)

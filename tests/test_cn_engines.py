@@ -8,6 +8,7 @@ from webserp.engines.sogou import Sogou
 from webserp.engines.sogou_weixin import SogouWeixin
 from webserp.engines.sogou_zhihu import SogouZhihu
 from webserp.engines.utils import is_challenge_page
+from webserp.errors import ChallengePageError
 
 
 class ChineseEnginesTest(unittest.TestCase):
@@ -131,10 +132,10 @@ class ChineseEnginesTest(unittest.TestCase):
         self.assertTrue(is_challenge_page("用户您好，我们的系统检测到您网络中存在异常访问请求"))
         self.assertTrue(is_challenge_page("Unfortunately, bots use DuckDuckGo too."))
 
-        with self.assertRaises(ValueError):
+        with self.assertRaises(ChallengePageError):
             Sogou().parse_response("antispider 请输入验证码")
 
-        with self.assertRaises(ValueError):
+        with self.assertRaises(ChallengePageError):
             DuckDuckGo().parse_response("Unfortunately, bots use DuckDuckGo too.")
 
 
