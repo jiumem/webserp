@@ -6,7 +6,7 @@ import sys
 from curl_cffi.requests import AsyncSession
 
 from .client import fetch, random_impersonate
-from .engines import ALL_ENGINES, Result
+from .engines import ALL_ENGINES, DEFAULT_ENGINES, Result
 from .engines.base import RequestSpec
 from .engines.duckduckgo import DuckDuckGo
 from .engines.startpage import Startpage
@@ -99,14 +99,14 @@ async def search(
     timeout: int = 10,
     proxy: str | None = None,
 ) -> dict:
-    """Search all engines in parallel and return merged results."""
+    """Search selected engines in parallel and return merged results."""
     engines_to_use = {}
     if engine_names:
         for name in engine_names:
             if name in ALL_ENGINES:
                 engines_to_use[name] = ALL_ENGINES[name]
     else:
-        engines_to_use = ALL_ENGINES
+        engines_to_use = DEFAULT_ENGINES
 
     succeeded = []
     failed = []

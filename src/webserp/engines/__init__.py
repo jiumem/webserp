@@ -8,6 +8,11 @@ from .yahoo import Yahoo
 from .mojeek import Mojeek
 from .startpage import Startpage
 from .presearch import Presearch
+from .bing_cn import BingCn
+from .baidu import Baidu
+from .sogou import Sogou
+from .sogou_weixin import SogouWeixin
+from .sogou_zhihu import SogouZhihu
 
 ALL_ENGINES: dict[str, Engine] = {
     "google": Google(),
@@ -17,6 +22,17 @@ ALL_ENGINES: dict[str, Engine] = {
     "mojeek": Mojeek(),
     "startpage": Startpage(),
     "presearch": Presearch(),
+    "bing_cn": BingCn(),
+    "baidu": Baidu(),
+    "sogou": Sogou(),
+    "sogou_weixin": SogouWeixin(),
+    "sogou_zhihu": SogouZhihu(),
 }
 
-__all__ = ["ALL_ENGINES", "Engine", "Result"]
+DEFAULT_ENGINES: dict[str, Engine] = {
+    name: engine
+    for name, engine in ALL_ENGINES.items()
+    if name != "sogou_zhihu"
+}
+
+__all__ = ["ALL_ENGINES", "DEFAULT_ENGINES", "Engine", "Result"]

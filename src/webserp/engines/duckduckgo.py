@@ -5,6 +5,7 @@ import re
 from lxml import html
 
 from .base import Engine, RequestSpec, Result
+from .utils import raise_for_challenge
 
 
 class DuckDuckGo(Engine):
@@ -35,6 +36,7 @@ class DuckDuckGo(Engine):
         return [token_req, search_req]
 
     def parse_response(self, text: str) -> list[Result]:
+        raise_for_challenge(text, self.name)
         results = []
         tree = html.fromstring(text)
 

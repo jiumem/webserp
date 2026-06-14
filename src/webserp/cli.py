@@ -6,7 +6,7 @@ import json
 import sys
 
 from . import __version__
-from .engines import ALL_ENGINES
+from .engines import ALL_ENGINES, DEFAULT_ENGINES
 from .search import search
 
 
@@ -19,7 +19,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "-e", "--engines",
         default=None,
-        help=f"Comma-separated engine list (default: all). Available: {','.join(ALL_ENGINES.keys())}",
+        help=(
+            "Comma-separated engine list "
+            f"(default: {','.join(DEFAULT_ENGINES.keys())}). "
+            f"Available: {','.join(ALL_ENGINES.keys())}"
+        ),
     )
     parser.add_argument("-n", "--max-results", type=int, default=10, help="Max results per engine (default: 10)")
     parser.add_argument("--timeout", type=int, default=10, help="Per-engine timeout in seconds (default: 10)")
@@ -49,7 +53,8 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     if args.verbose:
-        succeeded = [e for e in (engine_names or ALL_ENGINES.keys()) if e not in [u[0] for u in result["unresponsive_engines"]]]
+        expected = engine_names or DEFAULT_ENGINES.keys()
+        succeeded = [e for e in expected if e not in [u[0] for u in result["unresponsive_engines"]]]
         print(f"Succeeded: {', '.join(succeeded)}", file=sys.stderr)
         for engine_name, error in result["unresponsive_engines"]:
             print(f"Failed: {engine_name} ({error})", file=sys.stderr)

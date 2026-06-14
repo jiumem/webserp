@@ -2,13 +2,13 @@
 
 Metasearch CLI — query multiple search engines in parallel with browser impersonation.
 
-Like `grep` for the web. Searches Google, DuckDuckGo, Brave, Yahoo, Mojeek, Startpage, and Presearch simultaneously, deduplicates results, and returns clean JSON.
+Like `grep` for the web. Searches Google, DuckDuckGo, Brave, Yahoo, Mojeek, Startpage, Presearch, Bing China, Baidu, Sogou, Sogou Weixin, and optionally Sogou Zhihu, deduplicates results, and returns clean JSON.
 
 ## Why webserp?
 
 Most search scraping tools get rate-limited and blocked because they use standard HTTP libraries. webserp uses [curl_cffi](https://github.com/lexiforest/curl_cffi) to impersonate real browsers (Chrome TLS/JA3 fingerprints), making requests indistinguishable from a human browsing.
 
-- **7 search engines** queried in parallel
+- **12 search engines** available
 - **Browser impersonation** via curl_cffi — bypasses bot detection
 - **Fault tolerant** — if one engine fails, others still return results
 - **SearXNG-compatible JSON** output format
@@ -24,11 +24,14 @@ pip install webserp
 ## Usage
 
 ```bash
-# Search all engines
+# Search default engines
 webserp "how to deploy docker containers"
 
 # Search specific engines
 webserp "python async tutorial" --engines google,brave,duckduckgo
+
+# Search Chinese engines
+webserp "新能源汽车 新闻" --engines bing_cn,baidu,sogou,sogou_weixin
 
 # Limit results per engine
 webserp "rust vs go" --max-results 5
@@ -65,7 +68,7 @@ JSON output matching SearXNG's format:
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `-e, --engines` | Comma-separated engine list | all |
+| `-e, --engines` | Comma-separated engine list | default engine set |
 | `-n, --max-results` | Max results per engine | 10 |
 | `--timeout` | Per-engine timeout (seconds) | 10 |
 | `--proxy` | Proxy URL for all requests | none |
@@ -74,7 +77,25 @@ JSON output matching SearXNG's format:
 
 ## Engines
 
-google, duckduckgo, brave, yahoo, mojeek, startpage, presearch
+google, duckduckgo, brave, yahoo, mojeek, startpage, presearch, bing_cn, baidu, sogou, sogou_weixin, sogou_zhihu
+
+Default engine set: all engines above except `sogou_zhihu`. Use `--engines sogou_zhihu` to run the Zhihu site search explicitly.
+
+## 中文搜索
+
+中文搜索建议优先使用：
+
+```bash
+webserp "新能源汽车 新闻" --engines bing_cn,baidu,sogou,sogou_weixin --max-results 3
+```
+
+- `bing_cn`：中文 Bing 网页搜索，结构稳定，URL 通常直出。
+- `baidu`：百度网页搜索，优先读取结果容器中的真实目标 URL。
+- `sogou`：搜狗普通网页搜索，部分结果 URL 是搜狗跳转链接。
+- `sogou_weixin`：搜狗微信文章搜索，用于微信公众号文章结果。
+- `sogou_zhihu`：搜狗知乎站内搜索，可选使用；它更容易触发搜狗反爬页面，不建议放入默认组合。
+
+webserp 会识别常见验证码、安全验证、`antispider`、异常访问等页面，并把对应引擎放入 `unresponsive_engines`。它不会识别验证码、绕过反爬、使用代理池或批量抓取正文。
 
 ## For OpenClaw and AI agents
 
