@@ -125,6 +125,86 @@ class WebFetchCliTest(unittest.TestCase):
         self.assertIn("meta", payload)
 
 
+class WebFetchAdversarialTest(unittest.TestCase):
+    def test_rejects_unsafe_markdown_url_schemes(self):
+        html = """
+        <html><body><main>
+          <h1>Unsafe URLs</h1>
+          <p>This paragraph has enough text to be viable and includes
+          <a href="Javascript:alert(1)">bad javascript</a>
+          plus more words for extraction.</p>
+          <img src="File:///etc/passwd" alt="local file">
+        </main></body></html>
+        """
+
+        result = extract(html, "https://example.com/unsafe")
+
+        self.assertIn("bad javascript", result.markdown)
+        self.assertNotIn("javascript:", result.markdown.lower())
+        self.assertNotIn("file:", result.markdown.lower())
+        self.assertEqual(result.images, [])
+        self.assertNotIn("bad javascript", [link.text for link in result.links])
+
+    def test_data_island_does_not_pollute_complete_short_article(self):
+        html = """
+        <html><head><title>Good Article</title></head><body>
+          <main><article>
+            <h1>Good Article</h1>
+            <p>This is a complete short article with a clear factual sentence
+            about the release checklist and review policy.</p>
+            <p>The content is intentionally short but already sufficient for
+            an agent answer.</p>
+          </article></main>
+          <script type="application/json">
+          {"modal":{"title":"Newsletter signup","body":"Subscribe to our weekly marketing digest to receive promotional offers and unrelated onboarding campaigns that should not be appended to the article markdown."}}
+          </script>
+        </body></html>
+        """
+
+        result = extract(html, "https://example.com/good")
+
+        self.assertIn(result.meta["strategy"], {"semantic", "scored", "structural"})
+        self.assertNotIn("data_enriched", result.meta["candidates"])
+        self.assertNotIn("weekly marketing digest", result.markdown)
+
+    def test_layout_table_filters_noisy_navigation_cells(self):
+        html = """
+        <html><body><table><tr>
+          <td class="sidebar nav"><a href="/login">Login</a><a href="/archive">Archive</a></td>
+          <td><article><h1>Main</h1>
+          <p>This is the actual article body with enough text to be a candidate
+          and it should not contain navigation.</p>
+          </article></td>
+        </tr></table></body></html>
+        """
+
+        result = extract(html, "https://example.com/layout")
+
+        self.assertIn("actual article body", result.markdown)
+        self.assertNotIn("Login", result.markdown)
+        self.assertNotIn("Archive", result.markdown)
+
+    def test_markdown_escapes_labels_and_code_fences(self):
+        html = """
+        <html><body><main>
+          <h1>Fence</h1>
+          <p>Example includes a code block with Markdown syntax.</p>
+          <pre><code class="language-md">```
+inside
+```</code></pre>
+          <p>See <a href="/x">bad ](text</a>
+          and <img src="/i.png" alt="alt ](bad)"></p>
+        </main></body></html>
+        """
+
+        result = extract(html, "https://example.com/fence")
+
+        self.assertIn("````md\n```\ninside\n```\n````", result.markdown)
+        self.assertIn("[bad \\](text](https://example.com/x)", result.markdown)
+        self.assertIn("![alt \\](bad)](https://example.com/i.png)", result.markdown)
+        self.assertNotIn("[bad ](text]", result.markdown)
+
+
 def _table_row_count(markdown: str) -> int:
     return sum(1 for line in markdown.splitlines() if line.startswith("|") and line.endswith("|"))
 

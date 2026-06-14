@@ -20,6 +20,10 @@ NOISE_CLASS_RE = re.compile(
     r"sidebar|menu|nav|footer|header|cookie|popup|modal|share|social|related|recommend|advert|sponsor|promo|breadcrumb",
     re.I,
 )
+TABLE_NOISE_CLASS_RE = re.compile(
+    r"sidebar|menu|nav|footer|cookie|popup|modal|share|social|related|recommend|advert|sponsor|promo|breadcrumb",
+    re.I,
+)
 NOISE_PHRASES = (
     "cookie settings",
     "accept cookies",
@@ -55,10 +59,13 @@ def extract(html_text: str, url: str, *, final_url: str | None = None, status: i
 
     candidates = _build_candidates(root, source_url, metadata.title, poison_ids, topology)
     best_dom = _best_candidate(candidates)
-    data_md = extract_data_island_markdown(raw_root, best_dom.score.text_chars if best_dom else 0)
+    data_md = ""
+    if _should_use_data_island(best_dom):
+        data_md = extract_data_island_markdown(raw_root, best_dom.score.text_chars if best_dom else 0)
+
     if data_md:
         candidates.append(_markdown_candidate("data_island", data_md, metadata.title))
-        if best_dom and best_dom.score.text_chars < 1200:
+        if best_dom and _should_enrich_with_data_island(best_dom):
             enriched_md = best_dom.markdown + "\n\n" + data_md
             candidates.append(_markdown_candidate("data_enriched", enriched_md, metadata.title, best_dom.assets))
 
@@ -129,7 +136,7 @@ def _build_candidates(
 
     structural = _structural_elements(root, poison_ids)
     if structural:
-        candidates.append(_element_candidate("structural", structural, base_url, title, set()))
+        candidates.append(_element_candidate("structural", structural, base_url, title, poison_ids))
 
     body = _first(root.xpath("//body"))
     if body is None:
@@ -279,6 +286,20 @@ def _structural_elements(root: html.HtmlElement, poison_ids: set[str]) -> list[h
     return selected
 
 
+def _should_use_data_island(best_dom: ExtractionCandidate | None) -> bool:
+    if best_dom is None:
+        return True
+    if best_dom.score.text_chars < 80:
+        return True
+    if best_dom.name == "body_fallback" and best_dom.score.text_chars < 120:
+        return True
+    return False
+
+
+def _should_enrich_with_data_island(best_dom: ExtractionCandidate) -> bool:
+    return best_dom.name == "body_fallback" and best_dom.score.text_chars < 80
+
+
 def _poison_ids(root: html.HtmlElement, topology: LinkTopologyAnalyzer) -> set[str]:
     ids = set()
     for node in root.xpath("//nav | //footer | //header | //aside"):
@@ -291,6 +312,15 @@ def _poison_ids(root: html.HtmlElement, topology: LinkTopologyAnalyzer) -> set[s
             continue
         attrs = " ".join(filter(None, [node.get("class"), node.get("id")]))
         if NOISE_CLASS_RE.search(attrs) or topology.link_mass(node) > 55.0:
+            ids.update(_node_key(child) for child in node.iter())
+
+    for node in root.xpath("//table | //tr | //td | //th"):
+        if _node_key(node) in ids:
+            continue
+        if node.xpath(".//article | .//main | .//*[@role='main']"):
+            continue
+        attrs = " ".join(filter(None, [node.get("class"), node.get("id")]))
+        if TABLE_NOISE_CLASS_RE.search(attrs) or topology.link_mass(node) > 55.0:
             ids.update(_node_key(child) for child in node.iter())
     return ids
 

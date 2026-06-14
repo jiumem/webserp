@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from copy import deepcopy
 from typing import Iterable
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 from lxml import etree, html
 
@@ -39,6 +39,7 @@ BLOCK_TAGS = {
 NOISE_TAGS = {"script", "style", "noscript", "iframe", "svg", "canvas", "button", "input", "textarea"}
 CODE_CLASS_RE = re.compile(r"(?:language|lang|highlight)-([A-Za-z0-9_+#.-]+)|\b(js|ts|python|py|rust|go|java|bash|sh|sql|json|yaml|html|css)\b", re.I)
 TABLE_SEP_RE = re.compile(r"^\|\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|$")
+SAFE_URL_SCHEMES = {"http", "https"}
 
 
 def convert_elements(
@@ -146,7 +147,7 @@ class MarkdownConverter:
         href = self.resolve(node.get("href", ""))
         if text and href:
             self.assets.links.append(Link(text=text, href=href))
-            return f"[{text}]({href})"
+            return f"[{_escape_md_label(text)}]({_escape_md_destination(href)})"
         return text
 
     def image_to_md(self, node: etree._Element) -> str:
@@ -155,7 +156,7 @@ class MarkdownConverter:
         if not src:
             return ""
         self.assets.images.append(Image(alt=alt, src=src))
-        return f"![{alt}]({src})"
+        return f"![{_escape_md_label(alt)}]({_escape_md_destination(src)})"
 
     def pre_to_md(self, node: etree._Element) -> str:
         code_el = node.xpath(".//code")
@@ -163,7 +164,8 @@ class MarkdownConverter:
         code = _collect_pre_text(target).strip("\n")
         language = _language(node, target)
         self.assets.code_blocks.append(CodeBlock(language=language, code=code))
-        return f"\n\n```{language}\n{code}\n```\n\n"
+        fence = _code_fence(code)
+        return f"\n\n{fence}{language}\n{code}\n{fence}\n\n"
 
     def list_to_md(self, node: etree._Element, list_depth: int, ordered: bool) -> str:
         lines = []
@@ -193,7 +195,7 @@ class MarkdownConverter:
         return "\n".join(line for line in lines if line)
 
     def table_to_md(self, table: etree._Element) -> str:
-        rows, is_layout = flatten_table(table)
+        rows, is_layout = flatten_table(table, exclude_keys=self.exclude_keys)
         if not rows:
             return ""
         if is_layout:
@@ -224,21 +226,29 @@ class MarkdownConverter:
         if not value:
             return ""
         value = value.strip()
-        if value.startswith(("data:", "blob:", "javascript:", "mailto:", "tel:", "#")):
+        if not value or value.startswith("#"):
             return ""
-        if value.startswith("//"):
-            return "https:" + value
-        return urljoin(self.base_url, value)
+        resolved = urljoin(self.base_url, value)
+        if urlparse(resolved).scheme.lower() not in SAFE_URL_SCHEMES:
+            return ""
+        return resolved
 
 
-def flatten_table(table: etree._Element) -> tuple[list[list[dict[str, str]]], bool]:
+def flatten_table(
+    table: etree._Element,
+    *,
+    exclude_keys: set[str] | None = None,
+) -> tuple[list[list[dict[str, str]]], bool]:
     matrix: list[list[dict[str, str] | None]] = []
     is_layout = False
+    exclude_keys = exclude_keys or set()
     rows = table.xpath(".//tr")
     for y, row in enumerate(rows):
         x = 0
         cells = row.xpath("./th | ./td")
         for cell in cells:
+            if _is_excluded(cell, exclude_keys):
+                continue
             while len(matrix) > y and len(matrix[y]) > x and matrix[y][x] is not None:
                 x += 1
             colspan = _int_attr(cell, "colspan", 1)
@@ -317,6 +327,15 @@ def _node_key(node: etree._Element) -> str:
     return node.getroottree().getpath(node)
 
 
+def _is_excluded(node: etree._Element, exclude_keys: set[str]) -> bool:
+    current = node
+    while current is not None:
+        if _node_key(current) in exclude_keys:
+            return True
+        current = current.getparent()
+    return False
+
+
 def _join_chunks(chunks: Iterable[str]) -> str:
     out = ""
     for chunk in chunks:
@@ -372,6 +391,19 @@ def _normalize_lang(language: str) -> str:
         "sh": "bash",
         "yml": "yaml",
     }.get(lower, lower)
+
+
+def _code_fence(code: str) -> str:
+    longest = max((len(match.group(0)) for match in re.finditer(r"`+", code)), default=0)
+    return "`" * max(3, longest + 1)
+
+
+def _escape_md_label(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]")
+
+
+def _escape_md_destination(value: str) -> str:
+    return value.replace("\\", "%5C").replace("(", "%28").replace(")", "%29").replace(" ", "%20")
 
 
 def _best_image_src(node: etree._Element) -> str:

@@ -84,6 +84,7 @@
 - `tests/fixtures/webfetch/*.html`：覆盖代表性页面结构。
 - `tests/fixtures/webfetch/*.expected.json`：Codex 标记的金标，包含 facts、must_exclude、结构计数、链接类型、候选 winner 期望。
 - `tests/test_webfetch.py`：逐 fixture 校验 Markdown 事实包含、噪声排除、元数据、候选策略、CJK、表格、代码块、图片、结构化数据和链接拓扑。
+- 额外 adversarial tests 覆盖 unsafe URL scheme、正常短文被数据岛污染、layout table 导航列混入、Markdown label escaping 和代码 fence escaping。
 - `tests/test_client.py`：校验 `fetch_response()` 在保持 `fetch()` 兼容的同时返回 final URL、status、headers。
 
 真实网络只适合作低频 smoke，不作为抽取质量判据，避免触发搜索引擎或站点限制。

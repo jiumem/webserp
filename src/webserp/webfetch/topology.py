@@ -16,12 +16,13 @@ NOISE_TEXT_RE = re.compile(
 )
 AD_HOST_PARTS = {"doubleclick", "googleadservices", "adsystem", "adservice"}
 USELESS_PREFIXES = ("javascript:", "mailto:", "tel:", "sms:", "#")
+SAFE_URL_SCHEMES = {"http", "https"}
 
 
 class LinkTopologyAnalyzer:
     def __init__(self, base_url: str):
         self.base_url = base_url
-        self.base_host = urlparse(base_url).netloc
+        self.base_host = urlparse(base_url).netloc.lower()
         self._mass_cache: dict[str, float] = {}
 
     def analyze(self, root: html.HtmlElement, content_links: list[Link]) -> list[Link]:
@@ -49,7 +50,7 @@ class LinkTopologyAnalyzer:
                     text=text,
                     href=href,
                     type=link_type,
-                    is_external=urlparse(href).netloc != self.base_host,
+                    is_external=urlparse(href).netloc.lower() != self.base_host,
                 )
             )
             seen.add(href)
@@ -83,7 +84,10 @@ class LinkTopologyAnalyzer:
             return ""
         if href.lower().startswith(USELESS_PREFIXES):
             return ""
-        return urljoin(self.base_url, href)
+        resolved = urljoin(self.base_url, href)
+        if urlparse(resolved).scheme.lower() not in SAFE_URL_SCHEMES:
+            return ""
+        return resolved
 
     def _is_noise_link(self, href: str, text: str) -> bool:
         if not text or len(text) < 2:

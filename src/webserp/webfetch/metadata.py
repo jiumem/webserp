@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 from lxml import html
 
 from .types import Metadata
+
+SAFE_URL_SCHEMES = {"http", "https"}
 
 
 def extract_metadata(root: html.HtmlElement, base_url: str) -> Metadata:
@@ -92,7 +94,10 @@ def _normalize(value: object) -> str:
 def _absolute(value: str, base_url: str) -> str:
     if not value:
         return ""
-    return urljoin(base_url, value)
+    resolved = urljoin(base_url, value)
+    if urlparse(resolved).scheme.lower() not in SAFE_URL_SCHEMES:
+        return ""
+    return resolved
 
 
 def _language(root: html.HtmlElement) -> str:

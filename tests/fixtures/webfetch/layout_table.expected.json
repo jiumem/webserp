@@ -8,6 +8,8 @@
     "must not destroy the order"
   ],
   "must_exclude": [
+    "Archive",
+    "Login",
     "| Archive |",
     "| Login |"
   ],

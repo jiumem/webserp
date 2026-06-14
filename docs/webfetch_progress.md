@@ -28,9 +28,10 @@
 - [x] 构建离线 fixtures 和 expected 金标。
 - [x] 覆盖安全、抽取、仲裁、Markdown、链接拓扑测试。
 - [x] 更新 README、skill 和专项说明文档。
+- [x] 根据严格 review 修复 unsafe URL scheme、数据岛污染、layout table 噪声混入、Markdown escaping/code fence 问题。
 - [x] 本地验证和 PR 提交材料准备。
 
 ## 当前验证结果
 
 - `python -m compileall -q src`：通过。
-- `PYTHONPATH=src python -m unittest discover -s tests`：通过，35 个测试。
+- `PYTHONPATH=src python -m unittest discover -s tests`：通过，39 个测试。
