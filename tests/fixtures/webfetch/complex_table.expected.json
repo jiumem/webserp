@@ -1,0 +1,18 @@
+{
+  "url": "https://example.com/reports/transit-metrics",
+  "strategy_in": ["semantic", "scored"],
+  "candidate_names": ["semantic", "scored", "structural", "body_fallback"],
+  "must_include": [
+    "Quarterly Transit Metrics",
+    "1.6M trips",
+    "99.2%",
+    "next procurement phase"
+  ],
+  "must_exclude": [],
+  "metadata": {
+    "title": "Quarterly Transit Metrics",
+    "language": "en"
+  },
+  "min_text_chars": 160,
+  "min_table_rows": 5
+}

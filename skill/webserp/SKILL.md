@@ -1,11 +1,11 @@
 ---
 name: webserp
-description: Web search across 12 available engines with browser impersonation, including Chinese sources such as Bing China, Baidu, Sogou web, Sogou Weixin, and optional Sogou Zhihu. Use when the agent needs current information from the web — news, documentation, recent events, or anything beyond training data. Returns structured JSON (SearXNG-compatible) with title, URL, and content. Install with `pip install webserp`. No API keys needed.
+description: Web search and single-page fetch extraction for local agents. Search across 12 available engines with browser impersonation, including Chinese sources such as Bing China, Baidu, Sogou web, Sogou Weixin, and optional Sogou Zhihu. Use `webserp` when the agent needs current URLs, news, documentation, recent events, or anything beyond training data. Use `webfetch` after selecting a URL to extract Markdown JSON, metadata, code blocks, images, structured data, and typed links. Install with `pip install webserp`. No API keys needed.
 ---
 
 # webserp
 
-Metasearch CLI — queries Google, DuckDuckGo, Brave, Yahoo, Mojeek, Startpage, Presearch, Bing China, Baidu, Sogou, Sogou Weixin, and optional Sogou Zhihu. Uses curl_cffi for browser impersonation. Results like a browser, speed like an API.
+Metasearch CLI plus single-page fetch extraction for local agents. `webserp` queries Google, DuckDuckGo, Brave, Yahoo, Mojeek, Startpage, Presearch, Bing China, Baidu, Sogou, Sogou Weixin, and optional Sogou Zhihu. `webfetch` reads one URL and extracts Agent-friendly Markdown JSON.
 
 ## When to use webserp
 
@@ -13,6 +13,7 @@ Metasearch CLI — queries Google, DuckDuckGo, Brave, Yahoo, Mojeek, Startpage, 
 2. You need to verify facts or find sources
 3. You need to discover URLs, documentation, or code repositories
 4. The user asks about recent events, releases, or news
+5. You have a candidate URL and need readable page Markdown with links, images, code blocks, metadata, and structured data
 
 ## Install
 
@@ -45,6 +46,9 @@ webserp "query" --timeout 15
 
 # Use a proxy
 webserp "query" --proxy "socks5://127.0.0.1:1080"
+
+# Fetch and extract one page after search
+webfetch "https://example.com/article"
 ```
 
 ## Options
@@ -59,7 +63,7 @@ webserp "query" --proxy "socks5://127.0.0.1:1080"
 
 ## Output format
 
-JSON to stdout (SearXNG-compatible):
+`webserp` writes SearXNG-compatible JSON to stdout:
 
 ```json
 {
@@ -80,6 +84,28 @@ JSON to stdout (SearXNG-compatible):
 
 Parse with `jq` or any JSON parser. The `results` array contains `title`, `url`, `content`, and `engine` for each result. `unresponsive_engines` lists any engines that failed with the error reason.
 
+`webfetch` writes single-page extraction JSON to stdout:
+
+```json
+{
+  "url": "https://example.com/start",
+  "final_url": "https://example.com/final",
+  "status": 200,
+  "title": "Page title",
+  "description": "Page description",
+  "markdown": "# Page title\n\nMain content...",
+  "text": "Page title\nMain content...",
+  "links": [
+    {"text": "Related", "href": "https://example.com/related", "type": "content", "is_external": false}
+  ],
+  "images": [],
+  "code_blocks": [],
+  "structured_data": [],
+  "metadata": {},
+  "meta": {"strategy": "semantic", "candidates": {}, "warnings": []}
+}
+```
+
 ## Recommended engine sets
 
 Recommended default set for agent use:
@@ -98,6 +124,13 @@ For Chinese search:
 
 ```bash
 webserp "query" --engines bing_cn,baidu,sogou,sogou_weixin --max-results 3
+```
+
+Recommended local-agent read flow:
+
+```bash
+webserp "query" --engines brave,yahoo,presearch,bing_cn,baidu,sogou,sogou_weixin --max-results 3
+webfetch "URL_FROM_RESULT"
 ```
 
 Avoid using these in the agent default set unless explicitly requested: `google`, `duckduckgo`, `startpage`, `mojeek`, `sogou_zhihu`. In local testing, Google/DuckDuckGo/Startpage often returned empty parsed results or verification pages, Mojeek timed out repeatedly, and Sogou Zhihu is more likely to return Sogou antispider pages.
@@ -132,6 +165,7 @@ webserp is intended for low-volume local agent search, not bulk scraping. Its fe
 - Retries `5xx` transient server responses at most once.
 - Does not retry CAPTCHA, security verification, consent wall, or challenge pages.
 - Reports blocked URLs, oversized bodies, HTTP errors, timeouts, and challenge pages through `unresponsive_engines`.
+- `webfetch` reuses the same safe fetch layer for selected URLs and does not retry by default.
 
 The DNS guard is a local-agent safety check for user URLs, not full DNS pinning. Do not use webserp to bypass anti-bot systems.
 

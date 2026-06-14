@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <title>Parsing HTML Streams in Python</title>
+  <meta name="description" content="A practical tutorial with Python code blocks.">
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <h2>Top tutorials</h2>
+      <a href="/tutorials/flask">Flask quickstart</a>
+      <a href="/tutorials/django">Django deployment</a>
+      <a href="/newsletter">Sign up</a>
+    </aside>
+    <section class="content tutorial">
+      <h1>Parsing HTML Streams in Python</h1>
+      <p>This tutorial shows how to parse a response stream while keeping memory bounded and preserving code fences for Agent-readable Markdown.</p>
+      <pre><code class="language-python">def iter_chunks(response):
+    for chunk in response.aiter_content():
+        if chunk:
+            yield chunk
+</code></pre>
+      <p>The key rule is to count bytes before decoding text, because a compressed or malformed response can otherwise exhaust memory.</p>
+      <ol>
+        <li>Declare a maximum body size.</li>
+        <li>Close the stream when a limit is exceeded.</li>
+        <li>Decode only after the byte cap has passed.</li>
+      </ol>
+    </section>
+  </div>
+</body>
+</html>

@@ -53,6 +53,14 @@ class FetchContext:
         return self._impersonates[key]
 
 
+@dataclass(frozen=True)
+class FetchResponse:
+    text: str
+    status: int
+    url: str
+    headers: Any
+
+
 async def fetch(
     url: str,
     *,
@@ -74,8 +82,51 @@ async def fetch(
     max_redirects: int = DEFAULT_MAX_REDIRECTS,
 ) -> str:
     """Fetch a URL with browser impersonation. Returns response text."""
+    response = await fetch_response(
+        url,
+        method=method,
+        params=params,
+        data=data,
+        headers=headers,
+        cookies=cookies,
+        timeout=timeout,
+        proxy=proxy,
+        session=session,
+        context=context,
+        profile_key=profile_key,
+        impersonate=impersonate,
+        max_body_bytes=max_body_bytes,
+        validate_url=validate_url,
+        retries=retries,
+        allow_redirects=allow_redirects,
+        max_redirects=max_redirects,
+    )
+    return response.text
+
+
+async def fetch_response(
+    url: str,
+    *,
+    method: str = "GET",
+    params: dict | None = None,
+    data: dict | None = None,
+    headers: dict | None = None,
+    cookies: dict | None = None,
+    timeout: int = 10,
+    proxy: str | None = None,
+    session: AsyncSession | None = None,
+    context: FetchContext | None = None,
+    profile_key: str | None = None,
+    impersonate: str | None = None,
+    max_body_bytes: int = DEFAULT_MAX_BODY_BYTES,
+    validate_url: bool = True,
+    retries: int = 1,
+    allow_redirects: bool = True,
+    max_redirects: int = DEFAULT_MAX_REDIRECTS,
+) -> FetchResponse:
+    """Fetch a URL with browser impersonation. Returns response metadata and text."""
     if context:
-        return await _fetch_with_session(
+        return await _fetch_with_session_response(
             context.session,
             url,
             method=method,
@@ -94,7 +145,7 @@ async def fetch(
         )
 
     if session:
-        return await _fetch_with_session(
+        return await _fetch_with_session_response(
             session,
             url,
             method=method,
@@ -113,7 +164,7 @@ async def fetch(
         )
 
     async with AsyncSession() as s:
-        return await _fetch_with_session(
+        return await _fetch_with_session_response(
             s,
             url,
             method=method,
@@ -150,6 +201,44 @@ async def _fetch_with_session(
     allow_redirects: bool,
     max_redirects: int,
 ) -> str:
+    response = await _fetch_with_session_response(
+        session,
+        url,
+        method=method,
+        params=params,
+        data=data,
+        headers=headers,
+        cookies=cookies,
+        timeout=timeout,
+        proxy=proxy,
+        impersonate=impersonate,
+        max_body_bytes=max_body_bytes,
+        validate_url=validate_url,
+        retries=retries,
+        allow_redirects=allow_redirects,
+        max_redirects=max_redirects,
+    )
+    return response.text
+
+
+async def _fetch_with_session_response(
+    session: AsyncSession,
+    url: str,
+    *,
+    method: str,
+    params: dict | None,
+    data: dict | None,
+    headers: dict | None,
+    cookies: dict | None,
+    timeout: int,
+    proxy: str | None,
+    impersonate: str,
+    max_body_bytes: int,
+    validate_url: bool,
+    retries: int,
+    allow_redirects: bool,
+    max_redirects: int,
+) -> FetchResponse:
     if validate_url:
         url = await validate_public_http_url(url)
 
@@ -190,7 +279,7 @@ async def _fetch_with_session(
                 continue
             if status >= 400:
                 raise HttpStatusError(status)
-            return text
+            return FetchResponse(text=text, status=status, url=final_url, headers=response_headers)
         except WebSerpError:
             raise
         except Exception as exc:

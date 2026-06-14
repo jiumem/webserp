@@ -44,6 +44,28 @@ webserp "test query" --verbose
 webserp "query" --proxy "socks5://127.0.0.1:1080"
 ```
 
+## WebFetch
+
+`webfetch` reads one URL and extracts Agent-friendly Markdown JSON. A typical local-agent flow is:
+
+```bash
+# 1. Find candidate URLs
+webserp "国产大模型 推理成本 新闻" --engines bing_cn,baidu,sogou,sogou_weixin --max-results 3
+
+# 2. Read one result page
+webfetch "https://example.com/article"
+```
+
+`webfetch` reuses the same safe fetch layer as search: HTTP(S)-only URL validation, private/internal address blocking, redirect target validation, response body cap, and challenge page detection. It does not solve CAPTCHAs, bypass verification, run a browser renderer, or perform bulk crawling.
+
+The JSON output includes `markdown`, `text`, typed `links`, `images`, `code_blocks`, `structured_data`, `metadata`, and extraction diagnostics under `meta`.
+
+```bash
+webfetch "https://example.com/article" --timeout 10 --max-body-bytes 5242880
+```
+
+See [docs/webfetch.md](docs/webfetch.md) for the extraction scope, output schema, testing strategy, and acceptance criteria.
+
 ## Output Format
 
 JSON output matching SearXNG's format:
@@ -98,6 +120,15 @@ webserp "新能源汽车 新闻" --engines bing_cn,baidu,sogou,sogou_weixin --ma
 
 webserp 会识别常见验证码、安全验证、`antispider`、异常访问等页面，并把对应引擎放入 `unresponsive_engines`。它不会识别验证码、绕过反爬、使用代理池或批量抓取正文。
 
+## 推荐 Agent 工作流
+
+```bash
+webserp "query" --engines brave,yahoo,presearch,bing_cn,baidu,sogou,sogou_weixin --max-results 3
+webfetch "URL_FROM_RESULT"
+```
+
+`webserp` 负责发现候选 URL，`webfetch` 负责读取已选页面正文。这样可以把搜索引擎请求次数保持在较低水平，也避免为了判断页面质量而反复访问搜索接口。
+
 ## 请求安全
 
 webserp 面向本地 Agent 按需搜索场景，默认采用温和请求策略：
@@ -110,6 +141,7 @@ webserp 面向本地 Agent 按需搜索场景，默认采用温和请求策略�
 - 一次 `search()` 内每个 engine 使用稳定的浏览器 impersonation profile，避免单次任务内反复抖动指纹。
 - `429` 不重试；`5xx` 等临时服务端错误最多重试一次；验证码/安全验证/challenge 页面不重试。
 - 常见 challenge、consent wall、JS-only 空壳页会进入 `unresponsive_engines`，不会伪装成成功结果。
+- `webfetch` 复用同一套安全请求层，并把单页读取结果交给离线正文抽取器转换成 Markdown JSON。
 
 DNS 校验是面向用户 URL 抓取的本地 Agent 安全防线，不是完整 DNS pinning；HTTP 传输层仍可能自行解析域名。webserp 不绕过验证码、不使用代理池、不做浏览器渲染。
 
@@ -117,9 +149,9 @@ DNS 校验是面向用户 URL 抓取的本地 Agent 安全防线，不是完整 
 
 **Built for AI agents.** Tools like [OpenClaw](https://github.com/openclaw/openclaw) and other AI agents need reliable web search without API keys. webserp uses [curl_cffi](https://github.com/lexiforest/curl_cffi) to send browser-like requests and queries multiple engines in parallel, so if one engine fails others can still return results.
 
-### Why a CLI tool instead of a Python library?
+### Why CLI tools instead of only a Python library?
 
-A CLI tool keeps web search out of the agent's process. The agent calls `webserp`, gets JSON back, and the process exits — no persistent HTTP sessions, no in-process state, no import overhead. Agents that never need web search pay zero cost.
+CLI tools keep web search and page reading out of the agent's process. The agent calls `webserp` or `webfetch`, gets JSON back, and the process exits — no persistent HTTP sessions, no in-process state, no import overhead. Agents that never need web access pay zero cost.
 
 ### Example agent use cases
 
@@ -137,6 +169,9 @@ webserp "docker networking troubleshooting" --engines brave,yahoo,presearch --ma
 
 # Quick search with verbose to see which engines responded
 webserp "CVE-2024 critical vulnerabilities" --verbose --max-results 5
+
+# Read one selected page as Markdown JSON
+webfetch "https://example.com/report"
 ```
 
 

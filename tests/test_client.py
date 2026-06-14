@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 
-from webserp.client import FetchContext, fetch
+from webserp.client import FetchContext, fetch, fetch_response
 from webserp.errors import BlockedUrlError, BodyTooLargeError, ChallengePageError, HttpStatusError
 
 
@@ -104,6 +104,18 @@ class ClientTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(text, "ok")
         self.assertEqual(len(session.calls), 2)
+
+    async def test_fetch_response_returns_metadata(self):
+        session = FakeSession([
+            FakeResponse(status=200, body=b"ok", headers={"x-test": "yes"}, url="https://example.com/final"),
+        ])
+
+        response = await fetch_response("https://example.com/start", session=session, validate_url=False)
+
+        self.assertEqual(response.text, "ok")
+        self.assertEqual(response.status, 200)
+        self.assertEqual(response.url, "https://example.com/final")
+        self.assertEqual(response.headers["x-test"], "yes")
 
     async def test_requests_stream_responses(self):
         session = FakeSession([
