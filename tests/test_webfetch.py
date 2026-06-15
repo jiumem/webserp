@@ -1,8 +1,11 @@
 import json
 import unittest
 from pathlib import Path
+from unittest.mock import AsyncMock, patch
 
 from webserp.webfetch import extract, webfetch
+from webserp.webfetch.service import fetch_page_response
+from webserp.client import FetchResponse
 
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "webfetch"
@@ -100,6 +103,27 @@ class WebFetchServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.status, 200)
         self.assertIn("Fetched Article", result.markdown)
         self.assertEqual(session.calls[0][1]["stream"], True)
+
+    async def test_fetch_page_response_falls_back_on_curl_challenge(self):
+        challenge = b"""
+        <html><head><title>Just a moment...</title></head>
+        <body>Enable JavaScript and cookies to continue<script>""" + (b"x" * 6000) + b"""</script></body></html>
+        """
+        session = FakeSession([
+            FakeResponse(status=403, body=challenge, headers={"cf-mitigated": "challenge"}, url="https://example.com/challenge"),
+        ])
+        fallback_response = FetchResponse(
+            text="<html><body><main><h1>Fallback Article</h1><p>Plain HTTP retrieved usable content.</p></main></body></html>",
+            status=200,
+            url="https://example.com/page",
+            headers={},
+        )
+
+        with patch("webserp.webfetch.service._plain_fetch_response", new=AsyncMock(return_value=fallback_response)) as mocked:
+            response = await fetch_page_response("https://example.com/page", session=session, validate_url=False)
+
+        self.assertEqual(response.text, fallback_response.text)
+        mocked.assert_awaited_once()
 
 
 class WebFetchAdversarialTest(unittest.TestCase):
@@ -247,6 +271,199 @@ inside
 
         self.assertIn("新能源汽车出海2.0", result.markdown)
         self.assertIn("转向建设供应链、渠道和售后生态", result.markdown)
+        self.assertNotIn("empty_extraction", result.meta["warnings"])
+
+    def test_injects_display_title_when_content_starts_at_h2(self):
+        html = """
+        <html>
+          <head><title>Using the Fetch API - Web APIs | MDN</title></head>
+          <body><main>
+            <h2>Making a request</h2>
+            <p>The Fetch API provides a JavaScript interface for making HTTP requests.</p>
+            <p>It is useful documentation content, even when the selected node starts below the page title.</p>
+          </main></body>
+        </html>
+        """
+
+        result = extract(html, "https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch")
+
+        self.assertTrue(result.markdown.startswith("# Using the Fetch API\n\n## Making a request"))
+        self.assertTrue(result.text.startswith("Using the Fetch API\nMaking a request"))
+
+    def test_trims_short_docs_navigation_prelude_before_h1(self):
+        html = """
+        <html>
+          <head><title>Transformers documentation | Hugging Face</title></head>
+          <body><main>
+            <div class="docs-shell">Transformers documentation Transformers View all docs API Reference</div>
+            <article>
+              <h1>Transformers</h1>
+              <p>Transformers provides APIs and tools to download and train pretrained models.</p>
+              <p>This is the relevant documentation body that should lead the Markdown output.</p>
+            </article>
+          </main></body>
+        </html>
+        """
+
+        result = extract(html, "https://huggingface.co/docs/transformers/en/index")
+
+        self.assertTrue(result.markdown.startswith("# Transformers\n\nTransformers provides APIs"))
+        self.assertNotIn("View all docs", "\n".join(result.markdown.splitlines()[0:3]))
+
+    def test_trims_duplicate_h1_docs_navigation_block(self):
+        versions = " ".join(f"v4.{index}.0" for index in range(60))
+        html = f"""
+        <html>
+          <head><title>Transformers · Hugging Face</title></head>
+          <body><main>
+            <h1>Transformers</h1>
+            <div class="docs-shell">View all docs AWS Trainium Accelerate Datasets {versions} doc-builder-html EN ZH Join the Hugging Face community</div>
+            <h1>Transformers</h1>
+            <p>Transformers acts as the model-definition framework for state-of-the-art machine learning models.</p>
+            <p>It centralizes the model definition across the ecosystem.</p>
+          </main></body>
+        </html>
+        """
+
+        result = extract(html, "https://huggingface.co/docs/transformers/en/index")
+
+        self.assertTrue(result.markdown.startswith("# Transformers\n\nTransformers acts as the model-definition framework"))
+        self.assertNotIn("View all docs", result.markdown)
+
+    def test_trims_repository_navigation_before_readme_h1(self):
+        html = """
+        <html>
+          <head><title>GitHub - psf/requests: A simple, yet elegant, HTTP library.</title></head>
+          <body><main>
+            <p><a href="/branches">Branches</a> <a href="/tags">Tags</a> Open more actions menu</p>
+            <h2>Repository files navigation</h2>
+            <h1>Requests</h1>
+            <p>Requests is a simple, yet elegant, HTTP library.</p>
+            <p>It allows you to send HTTP requests extremely easily.</p>
+          </main></body>
+        </html>
+        """
+
+        result = extract(html, "https://github.com/psf/requests")
+
+        self.assertTrue(result.markdown.startswith("# Requests\n\nRequests is a simple"))
+        self.assertNotIn("Repository files navigation", result.markdown)
+
+    def test_trims_microsoft_learn_navigation_before_h1(self):
+        html = """
+        <html>
+          <head><title>Azure Identity client library for Python</title></head>
+          <body><main>
+            <p>Read in English</p>
+            <p><a href="/edit">Edit</a></p>
+            <p>Note</p>
+            <p>Access to this page requires authorization. You can try changing directories.</p>
+            <h1>Azure Identity client library for Python - version 1.25.3</h1>
+            <p>The Azure Identity library provides token-based authentication support across the Azure SDK.</p>
+          </main></body>
+        </html>
+        """
+
+        result = extract(html, "https://learn.microsoft.com/en-us/python/api/overview/azure/identity-readme")
+
+        self.assertTrue(result.markdown.startswith("# Azure Identity client library for Python - version 1.25.3"))
+        self.assertNotIn("Read in English", result.markdown)
+
+    def test_injects_title_when_first_h1_is_not_page_title(self):
+        html = """
+        <html>
+          <head><title>What does the "yield" keyword do in Python?</title></head>
+          <body><main>
+            <p>Asked 17 years ago. Viewed 3.5m times.</p>
+            <p>What functionality does the yield keyword in Python provide?</p>
+            <pre><code>yield value</code></pre>
+            <h1>Highest scored answer</h1>
+            <p>A function containing yield is a generator function.</p>
+          </main></body>
+        </html>
+        """
+
+        result = extract(html, "https://stackoverflow.com/questions/231767/what-does-the-yield-keyword-do-in-python")
+
+        self.assertTrue(result.markdown.startswith("# What does the \"yield\" keyword do in Python?"))
+        self.assertIn("## Highest scored answer", result.markdown)
+
+    def test_strips_leading_wikipedia_maintenance_notices(self):
+        html = """
+        <html>
+          <head><title>Web scraping - Wikipedia</title></head>
+          <body><main>
+            <h1>Web scraping - Wikipedia</h1>
+            <p>From Wikipedia, the free encyclopedia</p>
+            <p><img src="/notice.svg" alt="icon"></p>
+            <p>This article needs additional citations for verification.</p>
+            <p>Find sources: "Web scraping" - news - books - scholar.</p>
+            <p>Method of extracting data from websites</p>
+            <p><b>Web scraping</b> is data scraping used for extracting data from websites.</p>
+          </main></body>
+        </html>
+        """
+
+        result = extract(html, "https://en.wikipedia.org/wiki/Web_scraping")
+
+        self.assertTrue(result.markdown.startswith("# Web scraping - Wikipedia\n\nMethod of extracting data from websites"))
+        self.assertNotIn("needs additional citations", result.markdown)
+
+    def test_trims_leading_image_only_prelude_before_h1(self):
+        html = """
+        <html><body><main>
+          <p><img src="/logo.png" alt=""></p>
+          <h1>新能源汽车出海2.0：从“卖车”到“建生态”</h1>
+          <p>中国车企正在从单纯出口整车，转向建设供应链、渠道和售后生态。</p>
+          <p>欧洲政策、关税和本地化要求推动企业重新设计出海路径。</p>
+        </main></body></html>
+        """
+
+        result = extract(html, "https://finance.sina.com.cn/jjxw/2026-02-19/doc.shtml")
+
+        self.assertTrue(result.markdown.startswith("# 新能源汽车出海2.0：从“卖车”到“建生态”"))
+        self.assertNotIn("logo.png", "\n".join(result.markdown.splitlines()[0:3]))
+
+    def test_puts_title_before_leading_logo_image_when_no_h1_exists(self):
+        html = """
+        <html>
+          <head><title>新能源汽车出海观察 | 证券日报</title></head>
+          <body><div id="article_content">
+            <p><img src="/logo.png" alt="证券日报"></p>
+            <p>中国车企正在从单纯出口整车，转向建设供应链、渠道和售后生态。</p>
+            <p>欧洲政策、关税和本地化要求推动企业重新设计出海路径。</p>
+          </div></body>
+        </html>
+        """
+
+        result = extract(html, "https://www.cs.com.cn/esg/202409/t20240923_6441250.html")
+
+        self.assertTrue(result.markdown.startswith("# 新能源汽车出海观察\n\n![证券日报]"))
+        self.assertTrue(result.text.startswith("新能源汽车出海观察\n证券日报"))
+
+    def test_extracts_gov_pages_content_container(self):
+        html = """
+        <html>
+          <head><title>国务院办公厅关于2026年部分节假日安排的通知_国务院文件_中国政府网</title></head>
+          <body>
+            <table class="border-table noneBorder pages_content"><tr><td>
+              <div id="UCAP-CONTENT" class="b12c pages_content">
+                <p>国务院办公厅关于2026年</p>
+                <p>部分节假日安排的通知</p>
+                <p>国办发明电〔2025〕7号</p>
+                <p>各省、自治区、直辖市人民政府，国务院各部委、各直属机构：</p>
+                <p>经国务院批准，现将2026年元旦、春节、清明节、劳动节、端午节、中秋节和国庆节放假调休日期的具体安排通知如下。</p>
+              </div>
+            </td></tr></table>
+          </body>
+        </html>
+        """
+
+        result = extract(html, "https://www.gov.cn/zhengce/zhengceku/202511/content_7047091.htm")
+
+        self.assertIn(result.meta["strategy"], {"semantic_exact", "semantic", "scored", "structural"})
+        self.assertTrue(result.markdown.startswith("# 国务院办公厅关于2026年部分节假日安排的通知_国务院文件_中国政府网"))
+        self.assertIn("国办发明电〔2025〕7号", result.markdown)
         self.assertNotIn("empty_extraction", result.meta["warnings"])
 
 
