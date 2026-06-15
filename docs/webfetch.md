@@ -11,7 +11,7 @@
 本 PR 覆盖：
 
 - 新增 `webcli-lite` CLI，包含 `serper`、`fetch`、`map` 子命令。
-- 保留 legacy `webserp` 和 `webfetch` 脚本兼容旧调用。
+- 只安装 `webcli-lite` 命令；旧 `webserp` / `webfetch` 命令不再保留。
 - 新增 Python API：`webserp.webfetch.webfetch(url)` 和纯离线抽取 API：`webserp.webfetch.extract(html, url)`。
 - 复用现有安全请求层：HTTP(S) URL 校验、私网/本地地址拦截、逐跳 redirect 校验、响应体大小上限、challenge 页面识别。
 - `fetch` 默认输出 Markdown，不混入 links；`map` 单独输出 links JSON。
@@ -93,7 +93,7 @@
 
 - `PYTHONPATH=src python -m unittest discover -s tests` 全量通过。
 - `python -m compileall -q src` 通过。
-- `webserp` 原 CLI 和 `fetch()` 字符串返回兼容不破坏。
+- `fetch()` 字符串返回兼容不破坏。
 - `webcli-lite serper` 默认 `bing_cn,brave`，每个引擎 5 条。
 - `webcli-lite fetch` 默认输出 Markdown；只有 `--format html` 输出 HTML。
 - `webcli-lite map` 默认只返回 `content,directory` links，`--all` 才返回全部。

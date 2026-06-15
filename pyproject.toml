@@ -29,8 +29,6 @@ dependencies = [
 
 [project.scripts]
 webcli-lite = "webserp.webcli_lite:main"
-webserp = "webserp.cli:main"
-webfetch = "webserp.webfetch_cli:main"
 
 [project.urls]
 Homepage = "https://github.com/PaperBoardOfficial/webserp"

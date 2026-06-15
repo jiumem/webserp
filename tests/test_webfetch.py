@@ -1,11 +1,8 @@
-import io
 import json
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 from webserp.webfetch import extract, webfetch
-from webserp.webfetch_cli import main as webfetch_cli_main
 
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "webfetch"
@@ -103,26 +100,6 @@ class WebFetchServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.status, 200)
         self.assertIn("Fetched Article", result.markdown)
         self.assertEqual(session.calls[0][1]["stream"], True)
-
-
-class WebFetchCliTest(unittest.TestCase):
-    def test_cli_prints_webfetch_json(self):
-        sample_html = (FIXTURE_DIR / "article_basic.html").read_text(encoding="utf-8")
-        result = extract(sample_html, "https://example.com/news/climate-policy")
-
-        async def fake_webfetch(*args, **kwargs):
-            return result
-
-        stdout = io.StringIO()
-        with patch("webserp.webfetch_cli.webfetch", fake_webfetch), patch("sys.stdout", stdout):
-            code = webfetch_cli_main(["https://example.com/news/climate-policy", "--no-indent"])
-
-        self.assertEqual(code, 0)
-        payload = json.loads(stdout.getvalue())
-        self.assertEqual(payload["url"], "https://example.com/news/climate-policy")
-        self.assertIn("Climate Policy Update", payload["markdown"])
-        self.assertIn("links", payload)
-        self.assertIn("meta", payload)
 
 
 class WebFetchAdversarialTest(unittest.TestCase):

@@ -8,7 +8,7 @@ Local-agent web CLI — search, fetch readable Markdown, and map links.
 - `fetch`: fetch one page and return Markdown by default.
 - `map`: extract page links, defaulting to `content` and `directory` links.
 
-The package still installs legacy `webserp` and `webfetch` commands for compatibility, but new Agent workflows should use `webcli-lite`.
+The package installs a single command: `webcli-lite`.
 
 ## Why webcli-lite?
 

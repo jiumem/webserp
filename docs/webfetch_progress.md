@@ -3,7 +3,7 @@
 ## 目标范围
 
 - 新增统一产品入口 `webcli-lite`，将搜索、正文读取、链接提取收缩为 `serper`、`fetch`、`map` 子命令。
-- 保留 legacy `webfetch URL` CLI，用于把单个 URL 抽取为 Agent 可消费的完整 JSON。
+- 移除旧 `webserp` / `webfetch` 命令入口，只保留 `webcli-lite`。
 - 复用现有安全请求层：HTTP(S) 校验、DNS/私网拦截、逐跳 redirect 校验、body cap、challenge 检测。
 - 不引入 Trafilatura/Readability 作为主路径；实现自研候选抽取、Markdown 转换、链接拓扑和仲裁。
 - 不做浏览器渲染、验证码绕过、代理池、云端反爬、批量爬取。
@@ -29,7 +29,7 @@
 ## 任务清单
 
 - [x] 扩展 fetch 层，暴露 `FetchResponse` 给 webfetch 使用。
-- [x] 实现 webfetch 抽取模块与 CLI。
+- [x] 实现 webfetch 抽取模块与统一 `webcli-lite` CLI。
 - [x] 构建离线 fixtures 和 expected 金标。
 - [x] 覆盖安全、抽取、仲裁、Markdown、链接拓扑测试。
 - [x] 更新 README、skill 和专项说明文档。
