@@ -1,177 +1,115 @@
 ---
 name: webserp
-description: Web search and single-page fetch extraction for local agents. Search across 12 available engines with browser impersonation, including Chinese sources such as Bing China, Baidu, Sogou web, Sogou Weixin, and optional Sogou Zhihu. Use `webserp` when the agent needs current URLs, news, documentation, recent events, or anything beyond training data. Use `webfetch` after selecting a URL to extract Markdown JSON, metadata, code blocks, images, structured data, and typed links. Install with `pip install webserp`. No API keys needed.
+description: Local-agent web CLI. Use `webcli-lite serper` to search current web results, `webcli-lite fetch` to read one URL as Markdown, and `webcli-lite map` to extract follow-up links. Default search uses only Bing China and Brave, 5 results each. No API keys needed. Install with `pip install webserp`.
 ---
 
-# webserp
+# webcli-lite
 
-Metasearch CLI plus single-page fetch extraction for local agents. `webserp` queries Google, DuckDuckGo, Brave, Yahoo, Mojeek, Startpage, Presearch, Bing China, Baidu, Sogou, Sogou Weixin, and optional Sogou Zhihu. `webfetch` reads one URL and extracts Agent-friendly Markdown JSON.
+Use `webcli-lite` for local-agent web search, page reading, and link mapping.
 
-## When to use webserp
-
-1. You need current/recent information not in your training data
-2. You need to verify facts or find sources
-3. You need to discover URLs, documentation, or code repositories
-4. The user asks about recent events, releases, or news
-5. You have a candidate URL and need readable page Markdown with links, images, code blocks, metadata, and structured data
-
-## Install
+## Default Workflow
 
 ```bash
-pip install webserp
+# 1. Search. Default engines: bing_cn,brave. Default max results: 5 each.
+webcli-lite serper "query"
+
+# 2. Fetch one selected result as Markdown.
+webcli-lite fetch "URL_FROM_RESULT"
+
+# 3. Optionally map follow-up links. Default link types: content,directory.
+webcli-lite map "URL_FROM_RESULT"
 ```
 
-No API keys, no configuration. Just install and search.
+Do not default to broad engine sets. Use additional engines only when the first pass is insufficient.
 
-## Usage
+## Search
 
 ```bash
-# Search default engines
-webserp "how to deploy docker containers"
-
-# Search specific engines
-webserp "python async tutorial" --engines brave,yahoo,presearch
-
-# Search Chinese engines
-webserp "新能源汽车 新闻" --engines bing_cn,baidu,sogou,sogou_weixin
-
-# Limit results per engine
-webserp "rust vs go" --max-results 5
-
-# Show which engines succeeded/failed
-webserp "test query" --verbose
-
-# Set per-engine timeout
-webserp "query" --timeout 15
-
-# Use a proxy
-webserp "query" --proxy "socks5://127.0.0.1:1080"
-
-# Fetch and extract one page after search
-webfetch "https://example.com/article"
+webcli-lite serper "query"
+webcli-lite serper "query" --engines bing_cn,brave
+webcli-lite serper "query" --profile cn-deep
+webcli-lite serper "query" --fallback yahoo,presearch
 ```
 
-## Options
+Default `serper` behavior:
 
-| Flag | Description | Default |
-|------|-------------|---------|
-| `-e, --engines` | Comma-separated engine list | default engine set |
-| `-n, --max-results` | Max results per engine | 10 |
-| `--timeout` | Per-engine timeout (seconds) | 10 |
-| `--proxy` | Proxy URL for all requests | none |
-| `--verbose` | Show engine status in stderr | false |
+- Engines: `bing_cn,brave`
+- Results: `2 x 5 = 10` maximum before dedupe
+- Output: JSON on stdout
+- Errors: JSON on stderr
 
-## Output format
+Available profiles:
 
-`webserp` writes SearXNG-compatible JSON to stdout:
+- `agent`: `bing_cn,brave`
+- `zh`: `bing_cn,brave`
+- `en`: `brave,bing_cn`
+- `mixed`: `bing_cn,brave,baidu,sogou,sogou_weixin,yahoo,presearch`
+- `cn-deep`: `bing_cn,baidu,sogou,sogou_weixin`
+- `all`: all engines
 
-```json
-{
-  "query": "deployment issue",
-  "number_of_results": 42,
-  "results": [
-    {
-      "title": "How to fix Docker deployment issues",
-      "url": "https://example.com/docker-fix",
-      "content": "Common Docker deployment problems and solutions...",
-      "engine": "google"
-    }
-  ],
-  "suggestions": [],
-  "unresponsive_engines": []
-}
-```
+Avoid these in default Agent use unless explicitly requested: `google`, `duckduckgo`, `startpage`, `mojeek`, `sogou_zhihu`.
 
-Parse with `jq` or any JSON parser. The `results` array contains `title`, `url`, `content`, and `engine` for each result. `unresponsive_engines` lists any engines that failed with the error reason.
-
-`webfetch` writes single-page extraction JSON to stdout:
-
-```json
-{
-  "url": "https://example.com/start",
-  "final_url": "https://example.com/final",
-  "status": 200,
-  "title": "Page title",
-  "description": "Page description",
-  "markdown": "# Page title\n\nMain content...",
-  "text": "Page title\nMain content...",
-  "links": [
-    {"text": "Related", "href": "https://example.com/related", "type": "content", "is_external": false}
-  ],
-  "images": [],
-  "code_blocks": [],
-  "structured_data": [],
-  "metadata": {},
-  "meta": {"strategy": "semantic", "candidates": {}, "warnings": []}
-}
-```
-
-## Recommended engine sets
-
-Recommended default set for agent use:
+## Fetch
 
 ```bash
-webserp "query" --engines brave,yahoo,presearch,bing_cn,baidu,sogou,sogou_weixin --max-results 3
+# Markdown to stdout
+webcli-lite fetch "https://example.com/article"
+
+# Markdown to local document
+webcli-lite fetch "https://example.com/article" -o article.md
+
+# Original HTML
+webcli-lite fetch "https://example.com/article" --format html
+
+# Structured wrapper without links by default
+webcli-lite fetch "https://example.com/article" --json
+
+# Offline HTML, no network fetch
+webcli-lite fetch --html-file page.html --base-url "https://example.com/page"
+cat page.html | webcli-lite fetch --stdin --base-url "https://example.com/page"
 ```
 
-For English or general web search:
+`fetch` is for readable content. Do not expect links in fetch output; use `map`.
+
+## Map
 
 ```bash
-webserp "query" --engines brave,yahoo,presearch --max-results 3
+# content + directory links
+webcli-lite map "https://example.com/article"
+
+# one class of links
+webcli-lite map "https://example.com/article" --type directory
+
+# all links, including navigation/noise
+webcli-lite map "https://example.com/article" --all
 ```
 
-For Chinese search:
+Link types:
+
+- `content`: links inside extracted content
+- `directory`: useful follow-up/resource/index links
+- `navigation`: header/footer/nav links
+- `noise`: login/share/privacy/ad-like links
+
+## Files and Pipes
 
 ```bash
-webserp "query" --engines bing_cn,baidu,sogou,sogou_weixin --max-results 3
+webcli-lite serper "query" > search.json
+webcli-lite fetch "URL" > article.md
+webcli-lite map "URL" > links.json
+
+webcli-lite serper "query" -o search.json
+webcli-lite fetch "URL" -o article.md
+webcli-lite map "URL" -o links.json
 ```
 
-Recommended local-agent read flow:
+`-o/--output` refuses to overwrite existing files unless `--force` is set.
 
-```bash
-webserp "query" --engines brave,yahoo,presearch,bing_cn,baidu,sogou,sogou_weixin --max-results 3
-webfetch "URL_FROM_RESULT"
-```
+## Safety
 
-Avoid using these in the agent default set unless explicitly requested: `google`, `duckduckgo`, `startpage`, `mojeek`, `sogou_zhihu`. In local testing, Google/DuckDuckGo/Startpage often returned empty parsed results or verification pages, Mojeek timed out repeatedly, and Sogou Zhihu is more likely to return Sogou antispider pages.
-
-## Chinese search
-
-Recommended Chinese engine set:
-
-```bash
-webserp "新能源汽车 新闻" --engines bing_cn,baidu,sogou,sogou_weixin --max-results 3
-```
-
-- `bing_cn`: Bing China web search.
-- `baidu`: Baidu web search, preferring original target URLs when Baidu exposes them.
-- `sogou`: Sogou web search.
-- `sogou_weixin`: Sogou Weixin article search.
-- `sogou_zhihu`: Sogou Zhihu site search. Use explicitly; it is more likely to return Sogou antispider pages.
-
-Anti-bot or verification pages are reported through `unresponsive_engines`. webserp does not solve CAPTCHAs, bypass verification, use proxy pools, or crawl linked page bodies.
-
-## Request safety
-
-webserp is intended for low-volume local agent search, not bulk scraping. Its fetch layer:
-
-- Allows only `http` and `https` URLs.
-- Provides best-effort DNS checks for future user-supplied URL fetches to block localhost, private/internal, link-local, reserved, and multicast addresses.
-- Validates redirect targets hop by hop in URL safety mode to prevent public URLs from redirecting to internal addresses.
-- Skips DNS SSRF checks for built-in search engine URLs because those URLs are fixed by code and local fake-ip DNS/proxy setups commonly map public domains to reserved ranges.
-- Caps response bodies at 5MB.
-- Keeps a stable browser impersonation profile per engine inside one search run.
-- Does not retry `429` rate-limit responses.
-- Retries `5xx` transient server responses at most once.
-- Does not retry CAPTCHA, security verification, consent wall, or challenge pages.
-- Reports blocked URLs, oversized bodies, HTTP errors, timeouts, and challenge pages through `unresponsive_engines`.
-- `webfetch` reuses the same safe fetch layer for selected URLs and does not retry by default.
-
-The DNS guard is a local-agent safety check for user URLs, not full DNS pinning. Do not use webserp to bypass anti-bot systems.
-
-## Tips
-
-- Use `--max-results 5` to keep output concise when you just need a few links
-- Use `--engines brave,yahoo,presearch` to target tested general-purpose engines
-- Use `--verbose` (writes to stderr) to see which engines responded — the JSON on stdout is unaffected
-- Results are deduplicated by URL across engines — you won't get the same link twice
+- No API keys.
+- No CAPTCHA solving.
+- No proxy pools.
+- No browser rendering.
+- `fetch` and `map` allow only HTTP(S) URLs and block localhost/private/internal targets by default.
+- Do not retry challenge pages. Pick another search result instead.

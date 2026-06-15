@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "webserp"
-version = "0.1.4"
-description = "Metasearch CLI — query multiple search engines in parallel with browser impersonation"
+version = "0.2.0"
+description = "Local-agent web CLI — search, fetch Markdown, and map links"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
@@ -28,6 +28,7 @@ dependencies = [
 ]
 
 [project.scripts]
+webcli-lite = "webserp.webcli_lite:main"
 webserp = "webserp.cli:main"
 webfetch = "webserp.webfetch_cli:main"
 
