@@ -42,7 +42,7 @@
 
 ## 当前验证结果
 
-- `PYTHONPATH=src python -m pytest -q`：通过，65 个测试。
+- `PYTHONPATH=src python -m pytest -q`：通过，66 个测试。
 - `PYTHONPATH=src python -m compileall -q src tests`：通过。
 - `git diff --check`：通过。
 - `python /Users/nuc8/.codex/skills/.system/skill-creator/scripts/quick_validate.py skill/webserp`：通过。

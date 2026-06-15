@@ -442,6 +442,38 @@ class WebCliLiteMapTest(unittest.TestCase):
         self.assertEqual(len(lines), 61)
         self.assertEqual(lines[-1].split("\t")[0], "60")
 
+    def test_map_line_formats_warn_when_default_limit_truncates_links(self):
+        html = "<html><body><main><h1>Docs</h1>" + "".join(
+            f'<p><a href="/docs/{index}">Guide {index}</a></p>' for index in range(60)
+        ) + "</main></body></html>"
+
+        for output_format in ("tsv", "jsonl"):
+            with self.subTest(output_format=output_format):
+                stdout = io.StringIO()
+                stderr = io.StringIO()
+                with (
+                    patch("sys.stdin", io.StringIO(html)),
+                    patch("sys.stdout", stdout),
+                    patch("sys.stderr", stderr),
+                ):
+                    code = webcli_main([
+                        "map",
+                        "--stdin",
+                        "--base-url",
+                        "https://example.com/docs/",
+                        "--all",
+                        "--format",
+                        output_format,
+                        "--fields",
+                        "id,text,href",
+                    ])
+
+                self.assertEqual(code, 0)
+                lines = stdout.getvalue().splitlines()
+                self.assertEqual(len(lines), 51 if output_format == "tsv" else 50)
+                self.assertIn("truncated at 50 links", stderr.getvalue())
+                self.assertIn("--max-links 0", stderr.getvalue())
+
     def test_map_rejects_invalid_link_type(self):
         html_path = FIXTURE_DIR / "directory_page.html"
         stderr = io.StringIO()

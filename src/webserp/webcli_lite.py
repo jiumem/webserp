@@ -246,8 +246,10 @@ async def _handle_map(args: argparse.Namespace) -> int:
         "truncated": {"links": truncated},
     }
     if args.format == "jsonl":
+        _warn_map_line_truncation(truncated, args.max_links, args.format)
         return _emit_jsonl(records, args.output, args.force)
     if args.format == "tsv":
+        _warn_map_line_truncation(truncated, args.max_links, args.format)
         return _emit_tsv(records, fields, args.output, args.force)
 
     payload = {
@@ -480,6 +482,16 @@ def _truncate_links(links: list[Link], max_links: int) -> tuple[list[Link], bool
     if max_links <= 0 or len(links) <= max_links:
         return links, False
     return links[:max_links], True
+
+
+def _warn_map_line_truncation(truncated: bool, max_links: int, output_format: str) -> None:
+    if not truncated:
+        return
+    print(
+        f"webcli-lite: warning: map {output_format} output truncated at {max_links} links; "
+        "pass --max-links 0 for full output",
+        file=sys.stderr,
+    )
 
 
 def _emit_json(payload: dict[str, Any], output: str | None, force: bool, *, indent: bool) -> int:

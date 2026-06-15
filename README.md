@@ -80,13 +80,13 @@ webcli-lite map "https://docs.example.com/" --format tsv --fields id,type,text,h
 ```json
 {
   "query": "deployment issue",
-  "number_of_results": 42,
+  "number_of_results": 10,
   "results": [
     {
       "title": "How to fix Docker deployment issues",
       "url": "https://example.com/docker-fix",
       "content": "Common Docker deployment problems and solutions...",
-      "engine": "google"
+      "engine": "bing_cn"
     }
   ],
   "suggestions": [],
@@ -141,6 +141,8 @@ id	type	text	href	path
 ```
 
 `--format jsonl` emits one JSON object per link for streaming tools.
+
+Line-oriented `map` output keeps stdout/file content data-only. If the default `--max-links 50` limit truncates TSV or JSONL output, `webcli-lite` prints a warning to stderr. Use `--max-links 0` for complete local indexes.
 
 All `webcli-lite` errors are JSON on stderr.
 
