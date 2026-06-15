@@ -45,6 +45,11 @@ webcli-lite map "https://example.com/article"
 
 # Extract all links, including navigation and noise
 webcli-lite map "https://example.com/article" --all
+
+# Write a large documentation link index for local grep
+TMPDIR="$(mktemp -d -t webcli-lite-map.XXXXXX)"
+webcli-lite map "https://docs.example.com/" --type directory --format tsv --fields id,type,text,href,path --max-links 0 -o "$TMPDIR/links.tsv"
+rg -i "install|quickstart|auth" "$TMPDIR/links.tsv"
 ```
 
 ## Output to Files
@@ -57,12 +62,15 @@ webcli-lite fetch "https://example.com/article" > article.md
 webcli-lite map "https://example.com/article" > links.json
 ```
 
-You can also use `-o/--output`. Existing files are not overwritten unless `--force` is set:
+You can also use `-o/--output`. Existing files are not overwritten unless `--force` is set. For large link maps, prefer a system temporary directory so intermediate indexes do not pollute the project:
 
 ```bash
 webcli-lite serper "腾讯 混元 最新进展" -o research/search.json
 webcli-lite fetch "https://example.com/article" -o research/article.md
 webcli-lite map "https://example.com/article" --type directory -o research/links.json
+
+TMPDIR="$(mktemp -d -t webcli-lite-map.XXXXXX)"
+webcli-lite map "https://docs.example.com/" --format tsv --fields id,type,text,href,path --max-links 0 -o "$TMPDIR/links.tsv"
 ```
 
 ## Output Format
@@ -111,6 +119,29 @@ Main content...
 }
 ```
 
+For large documentation pages, `map` can write one link per line for local filtering:
+
+```bash
+webcli-lite map "https://docs.example.com/" \
+  --type directory \
+  --format tsv \
+  --fields id,type,text,href,path \
+  --max-links 0 \
+  -o "$TMPDIR/links.tsv"
+
+rg -i "install|quickstart|authentication|api key" "$TMPDIR/links.tsv"
+```
+
+TSV output is headered and grep-friendly:
+
+```text
+id	type	text	href	path
+1	directory	Quickstart	https://docs.example.com/quickstart	/quickstart
+2	directory	Authentication	https://docs.example.com/auth	/auth
+```
+
+`--format jsonl` emits one JSON object per link for streaming tools.
+
 All `webcli-lite` errors are JSON on stderr.
 
 ## Subcommands
@@ -155,9 +186,13 @@ webcli-lite map "URL"
 webcli-lite map "URL" --type directory
 webcli-lite map "URL" --type content,directory
 webcli-lite map "URL" --all
+webcli-lite map "URL" --format tsv --fields id,type,text,href,path -o links.tsv
+webcli-lite map "URL" --format jsonl --fields id,text,href,domain,path -o links.jsonl
 ```
 
 Default `map` link types: `content,directory`.
+
+`--format` supports `json`, `jsonl`, and `tsv`. `--fields` supports `id,type,text,href,is_external,domain,path`.
 
 ## Engines
 
@@ -190,6 +225,14 @@ webcli-lite map "URL_FROM_RESULT" --type directory -o links.json
 ```
 
 `serper` 负责发现候选 URL，`fetch` 负责读取已选页面正文，`map` 负责后续链接探索。这样可以把搜索引擎请求次数保持在较低水平，也避免为了判断页面质量而反复访问搜索接口。
+
+For document-style sites with many links, do not put the full link set in the conversation. Write a local TSV/JSONL index to a temporary directory, filter by link text with `rg`, and fetch only a few selected URLs:
+
+```bash
+TMPDIR="$(mktemp -d -t webcli-lite-map.XXXXXX)"
+webcli-lite map "URL_FROM_RESULT" --type directory --format tsv --fields id,type,text,href,path --max-links 0 -o "$TMPDIR/links.tsv"
+rg -i "install|quickstart|auth|api key" "$TMPDIR/links.tsv"
+```
 
 ## 请求安全
 

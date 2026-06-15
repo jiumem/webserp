@@ -18,6 +18,7 @@
 - `webcli-lite serper` 默认 `bing_cn,brave`，每个引擎 5 条。
 - `webcli-lite fetch` 默认只输出 Markdown；links 由 `webcli-lite map` 单独输出。
 - `webcli-lite map` 默认返回 `content,directory`，可通过 `--type` 或 `--all` 扩展。
+- `webcli-lite map` 支持 `--format tsv/jsonl` 和 `--fields`，用于把大文档站链接集落盘后用 `rg` 筛选。
 - 所有 `webcli-lite` 子命令支持 stdout 管道、`-o/--output`、`--force` 和 JSON 错误协议。
 
 ## 测试策略
@@ -35,9 +36,13 @@
 - [x] 更新 README、skill 和专项说明文档。
 - [x] 根据严格 review 修复 unsafe URL scheme、数据岛污染、layout table 噪声混入、Markdown escaping/code fence 问题。
 - [x] 新增 `webcli-lite serper/fetch/map` 统一入口、文件输出、map 分离和 Agent-safe 默认值。
+- [x] 新增 grep-friendly map 输出，支持 TSV/JSONL、字段选择、稳定 id、domain/path 派生字段。
+- [x] 更新 skill，要求大 map 结果优先写入 `mktemp -d` 临时目录，再用 `rg` 筛选少量候选。
 - [x] 本地验证和 PR 提交材料准备。
 
 ## 当前验证结果
 
-- `python -m compileall -q src`：通过。
-- `PYTHONPATH=src python -m unittest discover -s tests`：通过，50 个测试。
+- `PYTHONPATH=src python -m pytest -q`：通过，65 个测试。
+- `PYTHONPATH=src python -m compileall -q src tests`：通过。
+- `git diff --check`：通过。
+- `python /Users/nuc8/.codex/skills/.system/skill-creator/scripts/quick_validate.py skill/webserp`：通过。

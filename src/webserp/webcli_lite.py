@@ -9,6 +9,7 @@ import json
 import sys
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from . import __version__
 from .client import DEFAULT_MAX_BODY_BYTES, fetch_response
@@ -24,6 +25,7 @@ SERPER_DEFAULT_MAX_RESULTS = 5
 FETCH_DEFAULT_MAX_MARKDOWN_CHARS = 20_000
 MAP_DEFAULT_LINK_TYPES = {"content", "directory"}
 MAP_DEFAULT_MAX_LINKS = 50
+MAP_LINK_FIELDS = ["id", "type", "text", "href", "is_external", "domain", "path"]
 
 SERPER_PROFILES = {
     "agent": SERPER_DEFAULT_ENGINES,
@@ -126,10 +128,12 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_output_args(fetch)
     fetch.set_defaults(handler=_handle_fetch)
 
-    map_cmd = subparsers.add_parser("map", help="Extract page links and return JSON")
+    map_cmd = subparsers.add_parser("map", help="Extract page links as JSON, JSONL, or TSV")
     map_cmd.add_argument("url", nargs="?", help="HTTP(S) URL to fetch")
     map_cmd.add_argument("--type", action="append", default=None, help="Link type to include: content,directory,navigation,noise")
     map_cmd.add_argument("--all", action="store_true", help="Return all link types")
+    map_cmd.add_argument("--format", choices=["json", "jsonl", "tsv"], default="json", help="Output format (default: json)")
+    map_cmd.add_argument("--fields", default=None, help=f"Comma-separated link fields for map output: {','.join(MAP_LINK_FIELDS)}")
     map_cmd.add_argument("--max-links", type=_non_negative_int, default=MAP_DEFAULT_MAX_LINKS, help="Max links to return; 0 disables truncation")
     map_cmd.add_argument("--html-file", default=None, help="Read HTML from a local file without network access")
     map_cmd.add_argument("--stdin", action="store_true", help="Read HTML from stdin without network access")
@@ -235,16 +239,24 @@ async def _handle_map(args: argparse.Namespace) -> int:
     link_types = _map_link_types(args)
     links = [link for link in result.links if args.all or link.type in link_types]
     links, truncated = _truncate_links(links, args.max_links)
+    fields = _map_fields(args.fields, default_for_format=args.format)
+    records = _map_link_records(links, fields)
+    meta = {
+        "link_types": "all" if args.all else sorted(link_types),
+        "truncated": {"links": truncated},
+    }
+    if args.format == "jsonl":
+        return _emit_jsonl(records, args.output, args.force)
+    if args.format == "tsv":
+        return _emit_tsv(records, fields, args.output, args.force)
+
     payload = {
         "url": result.url,
         "final_url": result.final_url,
         "status": result.status,
         "title": result.title,
-        "links": [link.as_dict() for link in links],
-        "meta": {
-            "link_types": "all" if args.all else sorted(link_types),
-            "truncated": {"links": truncated},
-        },
+        "links": records if args.fields else [link.as_dict() for link in links],
+        "meta": meta,
     }
     return _emit_json(payload, args.output, args.force, indent=not args.no_indent)
 
@@ -409,6 +421,55 @@ def _map_link_types(args: argparse.Namespace) -> set[str]:
     return link_types
 
 
+def _map_fields(raw: str | None, *, default_for_format: str) -> list[str]:
+    if raw is None:
+        if default_for_format == "json":
+            return ["text", "href", "type", "is_external"]
+        return list(MAP_LINK_FIELDS)
+    fields = _parse_csv(raw)
+    if not fields:
+        raise CliError("ArgumentError", "--fields must include at least one field")
+    invalid = [field for field in fields if field not in MAP_LINK_FIELDS]
+    if invalid:
+        raise CliError(
+            "ArgumentError",
+            f"unknown map fields: {', '.join(invalid)}",
+            details={"available": MAP_LINK_FIELDS},
+        )
+    result = []
+    seen = set()
+    for field in fields:
+        if field in seen:
+            continue
+        seen.add(field)
+        result.append(field)
+    return result
+
+
+def _map_link_records(links: list[Link], fields: list[str]) -> list[dict[str, Any]]:
+    return [_select_fields(_link_record(index, link), fields) for index, link in enumerate(links, start=1)]
+
+
+def _link_record(index: int, link: Link) -> dict[str, Any]:
+    parsed = urlparse(link.href)
+    path = parsed.path or "/"
+    if parsed.query:
+        path = f"{path}?{parsed.query}"
+    return {
+        "id": index,
+        "type": link.type,
+        "text": link.text,
+        "href": link.href,
+        "is_external": link.is_external,
+        "domain": parsed.netloc.lower(),
+        "path": path,
+    }
+
+
+def _select_fields(record: dict[str, Any], fields: list[str]) -> dict[str, Any]:
+    return {field: record[field] for field in fields}
+
+
 def _truncate(value: str, max_chars: int) -> tuple[str, bool]:
     if max_chars <= 0 or len(value) <= max_chars:
         return value, False
@@ -424,6 +485,24 @@ def _truncate_links(links: list[Link], max_links: int) -> tuple[list[Link], bool
 def _emit_json(payload: dict[str, Any], output: str | None, force: bool, *, indent: bool) -> int:
     text = json.dumps(payload, indent=2 if indent else None, ensure_ascii=False)
     return _emit_text(text + "\n", output, force, expected_suffixes={".json"})
+
+
+def _emit_jsonl(records: list[dict[str, Any]], output: str | None, force: bool) -> int:
+    text = "".join(json.dumps(record, ensure_ascii=False) + "\n" for record in records)
+    return _emit_text(text, output, force, expected_suffixes={".jsonl", ".ndjson"})
+
+
+def _emit_tsv(records: list[dict[str, Any]], fields: list[str], output: str | None, force: bool) -> int:
+    lines = ["\t".join(fields)]
+    for record in records:
+        lines.append("\t".join(_tsv_value(record[field]) for field in fields))
+    return _emit_text("\n".join(lines) + "\n", output, force, expected_suffixes={".tsv", ".txt"})
+
+
+def _tsv_value(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return " ".join(str(value).split())
 
 
 def _emit_text(text: str, output: str | None, force: bool, *, expected_suffixes: set[str]) -> int:

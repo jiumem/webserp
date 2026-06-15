@@ -1,11 +1,11 @@
 ---
 name: webserp
-description: Local-agent web CLI. Use `webcli-lite serper` to search current web results, `webcli-lite fetch` to read one URL as Markdown, and `webcli-lite map` to extract follow-up links. Default search uses only Bing China and Brave, 5 results each. No API keys needed. Install with `pip install webserp`.
+description: Local-agent web CLI for current web search and page reading. Use when `webcli-lite` is available and Codex needs to run `webcli-lite serper` for search, `webcli-lite fetch` for Markdown page reading, or `webcli-lite map` for link discovery. Default search uses Bing China and Brave, 5 results each, with no API keys.
 ---
 
 # webcli-lite
 
-Use `webcli-lite` for local-agent web search, page reading, and link mapping.
+Use `webcli-lite` for local-agent web search, page reading, and link mapping. Keep request volume low and keep large intermediate link sets out of conversation context.
 
 ## Default Workflow
 
@@ -13,14 +13,14 @@ Use `webcli-lite` for local-agent web search, page reading, and link mapping.
 # 1. Search. Default engines: bing_cn,brave. Default max results: 5 each.
 webcli-lite serper "query"
 
-# 2. Fetch one selected result as Markdown.
+# 2. Fetch 1-3 selected results as Markdown.
 webcli-lite fetch "URL_FROM_RESULT"
 
 # 3. Optionally map follow-up links. Default link types: content,directory.
 webcli-lite map "URL_FROM_RESULT"
 ```
 
-Do not default to broad engine sets. Use additional engines only when the first pass is insufficient.
+Do not default to broad engine sets, `--profile all`, or bulk fetching. Use one default search pass first, inspect results, then fetch only the most likely useful URLs. Use additional engines only when the first pass is insufficient or the user explicitly asks for broad coverage.
 
 ## Search
 
@@ -45,7 +45,7 @@ Available profiles:
 - `en`: `brave,bing_cn`
 - `mixed`: `bing_cn,brave,baidu,sogou,sogou_weixin,yahoo,presearch`
 - `cn-deep`: `bing_cn,baidu,sogou,sogou_weixin`
-- `all`: all engines
+- `all`: all engines; use only for explicit diagnostic or broad sweep requests
 
 Avoid these in default Agent use unless explicitly requested: `google`, `duckduckgo`, `startpage`, `mojeek`, `sogou_zhihu`.
 
@@ -69,7 +69,9 @@ webcli-lite fetch --html-file page.html --base-url "https://example.com/page"
 cat page.html | webcli-lite fetch --stdin --base-url "https://example.com/page"
 ```
 
-`fetch` is for readable content. Do not expect links in fetch output; use `map`.
+`fetch` is for readable content. Do not expect links in fetch output; use `map`. If Markdown is truncated, retry the same selected URL with a larger `--max-markdown-chars` value or `--max-markdown-chars 0`; do not broaden search just because a selected page was truncated.
+
+For offline HTML, `--base-url` must be the original public HTTP(S) page URL. Do not use localhost, private IPs, or `file://` URLs.
 
 ## Map
 
@@ -82,6 +84,16 @@ webcli-lite map "https://example.com/article" --type directory
 
 # all links, including navigation/noise
 webcli-lite map "https://example.com/article" --all
+
+# large documentation pages: write a grep-friendly local index
+TMPDIR="$(mktemp -d -t webcli-lite-map.XXXXXX)"
+webcli-lite map "https://docs.example.com/" \
+  --type directory \
+  --format tsv \
+  --fields id,type,text,href,path \
+  --max-links 0 \
+  -o "$TMPDIR/links.tsv"
+rg -i "install|quickstart|auth|api key" "$TMPDIR/links.tsv"
 ```
 
 Link types:
@@ -90,6 +102,15 @@ Link types:
 - `directory`: useful follow-up/resource/index links
 - `navigation`: header/footer/nav links
 - `noise`: login/share/privacy/ad-like links
+
+For large document-style sites, do not return all links to the conversation. Write TSV or JSONL to a system temporary directory with `mktemp -d`, use `rg`, `cut`, or `awk` to select a few candidates by link text, then `fetch` only the chosen URLs. Use project directories only when the user explicitly asks to keep the link index.
+
+Useful map formats:
+
+- `--format json`: default envelope for small results.
+- `--format tsv`: one link per line; best for `rg`.
+- `--format jsonl`: one JSON object per link; useful for streaming tools.
+- `--fields id,type,text,href,is_external,domain,path`: choose columns for TSV/JSONL or enriched JSON links.
 
 ## Files and Pipes
 
@@ -113,3 +134,4 @@ webcli-lite map "URL" -o links.json
 - No browser rendering.
 - `fetch` and `map` allow only HTTP(S) URLs and block localhost/private/internal targets by default.
 - Do not retry challenge pages. Pick another search result instead.
+- Do not bulk fetch all search results or all mapped links.

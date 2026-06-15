@@ -315,6 +315,133 @@ class WebCliLiteMapTest(unittest.TestCase):
         self.assertTrue(payload["links"])
         self.assertEqual({link["type"] for link in payload["links"]}, {"navigation"})
 
+    def test_map_tsv_outputs_grep_friendly_fields(self):
+        html_path = FIXTURE_DIR / "directory_page.html"
+        stdout = io.StringIO()
+        with patch("sys.stdout", stdout):
+            code = webcli_main([
+                "map",
+                "--html-file",
+                str(html_path),
+                "--base-url",
+                "https://example.com/resources/agent-tooling",
+                "--type",
+                "directory",
+                "--format",
+                "tsv",
+                "--fields",
+                "id,type,text,href,path",
+                "--max-links",
+                "0",
+            ])
+
+        self.assertEqual(code, 0)
+        lines = stdout.getvalue().splitlines()
+        self.assertGreaterEqual(len(lines), 2)
+        self.assertEqual(lines[0], "id\ttype\ttext\thref\tpath")
+        self.assertTrue(all(len(line.split("\t")) == 5 for line in lines))
+        first = lines[1].split("\t")
+        self.assertEqual(first[0], "1")
+        self.assertEqual(first[1], "directory")
+        self.assertIn("Agent", first[2])
+        self.assertTrue(first[3].startswith("https://example.com/"))
+        self.assertTrue(first[4].startswith("/"))
+
+    def test_map_jsonl_outputs_one_record_per_line(self):
+        html_path = FIXTURE_DIR / "directory_page.html"
+        stdout = io.StringIO()
+        with patch("sys.stdout", stdout):
+            code = webcli_main([
+                "map",
+                "--html-file",
+                str(html_path),
+                "--base-url",
+                "https://example.com/resources/agent-tooling",
+                "--type",
+                "directory",
+                "--format",
+                "jsonl",
+                "--fields",
+                "id,text,href,domain,path",
+            ])
+
+        self.assertEqual(code, 0)
+        records = [json.loads(line) for line in stdout.getvalue().splitlines()]
+        self.assertTrue(records)
+        self.assertEqual(records[0]["id"], 1)
+        self.assertEqual(records[0]["domain"], "example.com")
+        self.assertIn("text", records[0])
+        self.assertIn("href", records[0])
+        self.assertIn("path", records[0])
+
+    def test_map_json_fields_can_emit_enriched_records(self):
+        html_path = FIXTURE_DIR / "directory_page.html"
+        stdout = io.StringIO()
+        with patch("sys.stdout", stdout):
+            code = webcli_main([
+                "map",
+                "--html-file",
+                str(html_path),
+                "--base-url",
+                "https://example.com/resources/agent-tooling",
+                "--type",
+                "directory",
+                "--fields",
+                "id,text,href",
+                "--no-indent",
+            ])
+
+        self.assertEqual(code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(set(payload["links"][0]), {"id", "text", "href"})
+        self.assertEqual(payload["links"][0]["id"], 1)
+
+    def test_map_rejects_invalid_output_field(self):
+        html_path = FIXTURE_DIR / "directory_page.html"
+        stderr = io.StringIO()
+        with patch("sys.stderr", stderr):
+            code = webcli_main([
+                "map",
+                "--html-file",
+                str(html_path),
+                "--base-url",
+                "https://example.com/resources/agent-tooling",
+                "--format",
+                "tsv",
+                "--fields",
+                "id,missing",
+            ])
+
+        self.assertEqual(code, 2)
+        payload = json.loads(stderr.getvalue())
+        self.assertEqual(payload["error"]["type"], "ArgumentError")
+        self.assertIn("available", payload["error"]["details"])
+
+    def test_map_max_links_zero_disables_truncation_for_line_formats(self):
+        html = "<html><body><main><h1>Docs</h1>" + "".join(
+            f'<p><a href="/docs/{index}">Guide {index}</a></p>' for index in range(60)
+        ) + "</main></body></html>"
+        stdout = io.StringIO()
+        with patch("sys.stdin", io.StringIO(html)), patch("sys.stdout", stdout):
+            code = webcli_main([
+                "map",
+                "--stdin",
+                "--base-url",
+                "https://example.com/docs/",
+                "--all",
+                "--format",
+                "tsv",
+                "--fields",
+                "id,text,href",
+                "--max-links",
+                "0",
+            ])
+
+        self.assertEqual(code, 0)
+        lines = stdout.getvalue().splitlines()
+        self.assertEqual(len(lines), 61)
+        self.assertEqual(lines[-1].split("\t")[0], "60")
+
     def test_map_rejects_invalid_link_type(self):
         html_path = FIXTURE_DIR / "directory_page.html"
         stderr = io.StringIO()
