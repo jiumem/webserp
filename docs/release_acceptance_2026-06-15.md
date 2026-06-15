@@ -5,7 +5,7 @@
 - 仓库：`jiumem/webserp`
 - 分支：`main`
 - Commit：`cf23bd188a479ecd9e34644f0b3152376e253998`
-- 版本：`webcli-lite 0.2.0`
+- 版本：`webcli-lite 0.3.0`
 - 验收方式：低频 live smoke，不对同一搜索接口做重复压力测试。
 - 临时结果目录：`/var/folders/g2/b5r2c68d3t9c0nxp16txxsfr0000gn/T/webcli-lite-accept.XXXXXX.2E1YLPp0Bo`
 
@@ -30,7 +30,7 @@ python -m venv "$VENV_DIR"
 
 结果：
 
-- `webcli-lite --version`：通过，输出 `webcli-lite 0.2.0`。
+- `webcli-lite --version`：通过，输出 `webcli-lite 0.3.0`。
 - 旧命令 `webserp`：未暴露，通过。
 - 旧命令 `webfetch`：未暴露，通过。
 
