@@ -16,7 +16,7 @@ from .errors import (
     HttpStatusError,
     WebSerpError,
 )
-from .security import validate_public_http_url
+from .security import DNSPolicy, STRICT_DNS_POLICY, validate_public_http_url
 
 CHROME_VERSIONS = [
     "chrome110", "chrome116", "chrome119", "chrome120",
@@ -45,6 +45,7 @@ class FetchContext:
     session: AsyncSession
     max_body_bytes: int = DEFAULT_MAX_BODY_BYTES
     validate_urls: bool = True
+    dns_policy: DNSPolicy = STRICT_DNS_POLICY
     _impersonates: dict[str, str] = field(default_factory=dict)
 
     def impersonate_for(self, key: str) -> str:
@@ -77,6 +78,7 @@ async def fetch(
     impersonate: str | None = None,
     max_body_bytes: int = DEFAULT_MAX_BODY_BYTES,
     validate_url: bool = True,
+    dns_policy: DNSPolicy = STRICT_DNS_POLICY,
     retries: int = 1,
     allow_redirects: bool = True,
     max_redirects: int = DEFAULT_MAX_REDIRECTS,
@@ -97,6 +99,7 @@ async def fetch(
         impersonate=impersonate,
         max_body_bytes=max_body_bytes,
         validate_url=validate_url,
+        dns_policy=dns_policy,
         retries=retries,
         allow_redirects=allow_redirects,
         max_redirects=max_redirects,
@@ -120,6 +123,7 @@ async def fetch_response(
     impersonate: str | None = None,
     max_body_bytes: int = DEFAULT_MAX_BODY_BYTES,
     validate_url: bool = True,
+    dns_policy: DNSPolicy = STRICT_DNS_POLICY,
     retries: int = 1,
     allow_redirects: bool = True,
     max_redirects: int = DEFAULT_MAX_REDIRECTS,
@@ -139,6 +143,7 @@ async def fetch_response(
             impersonate=impersonate or context.impersonate_for(profile_key or url),
             max_body_bytes=context.max_body_bytes,
             validate_url=context.validate_urls,
+            dns_policy=context.dns_policy,
             retries=retries,
             allow_redirects=allow_redirects,
             max_redirects=max_redirects,
@@ -158,6 +163,7 @@ async def fetch_response(
             impersonate=impersonate or random_impersonate(),
             max_body_bytes=max_body_bytes,
             validate_url=validate_url,
+            dns_policy=dns_policy,
             retries=retries,
             allow_redirects=allow_redirects,
             max_redirects=max_redirects,
@@ -177,6 +183,7 @@ async def fetch_response(
             impersonate=impersonate or random_impersonate(),
             max_body_bytes=max_body_bytes,
             validate_url=validate_url,
+            dns_policy=dns_policy,
             retries=retries,
             allow_redirects=allow_redirects,
             max_redirects=max_redirects,
@@ -197,6 +204,7 @@ async def _fetch_with_session(
     impersonate: str,
     max_body_bytes: int,
     validate_url: bool,
+    dns_policy: DNSPolicy,
     retries: int,
     allow_redirects: bool,
     max_redirects: int,
@@ -214,6 +222,7 @@ async def _fetch_with_session(
         impersonate=impersonate,
         max_body_bytes=max_body_bytes,
         validate_url=validate_url,
+        dns_policy=dns_policy,
         retries=retries,
         allow_redirects=allow_redirects,
         max_redirects=max_redirects,
@@ -235,12 +244,13 @@ async def _fetch_with_session_response(
     impersonate: str,
     max_body_bytes: int,
     validate_url: bool,
+    dns_policy: DNSPolicy,
     retries: int,
     allow_redirects: bool,
     max_redirects: int,
 ) -> FetchResponse:
     if validate_url:
-        url = await validate_public_http_url(url)
+        url = await validate_public_http_url(url, dns_policy=dns_policy)
 
     last_error: Exception | None = None
     attempts = max(0, retries) + 1
@@ -259,6 +269,7 @@ async def _fetch_with_session_response(
                 proxy=proxy,
                 max_body_bytes=max_body_bytes,
                 validate_url=validate_url,
+                dns_policy=dns_policy,
                 allow_redirects=allow_redirects,
                 max_redirects=max_redirects,
             )
@@ -308,6 +319,7 @@ async def _request_with_redirects(
     proxy: str | None,
     max_body_bytes: int,
     validate_url: bool,
+    dns_policy: DNSPolicy,
     allow_redirects: bool,
     max_redirects: int,
 ) -> tuple[str, int, str, Any]:
@@ -359,7 +371,7 @@ async def _request_with_redirects(
             raise FetchRequestError(f"too many redirects after {max_redirects} hops")
 
         next_url = urljoin(final_url or current_url, location)
-        current_url = await validate_public_http_url(next_url)
+        current_url = await validate_public_http_url(next_url, dns_policy=dns_policy)
         redirects += 1
 
         # Match browser/client redirect semantics for common POST-to-GET redirects.

@@ -12,7 +12,7 @@ The package installs a single command: `webcli-lite`.
 
 ## Why webcli-lite?
 
-- **Agent-safe defaults** — default search uses only `bing_cn` and `brave`, 5 results each.
+- **Agent-safe defaults** — default search starts with `bing_cn` and `brave`, 5 results each, and uses low-frequency fallback only when results are insufficient.
 - **Clear command boundaries** — search, content fetch, and link mapping are separate operations.
 - **Browser-like requests** via [curl_cffi](https://github.com/lexiforest/curl_cffi) with stable per-search impersonation profiles.
 - **Local-agent safety checks** for HTTP(S) URLs, private/internal destinations, response size, redirects, and challenge pages.
@@ -163,7 +163,8 @@ webcli-lite serper --list-profiles
 |------|-------------|---------|
 | `-e, --engines` | Comma-separated engine list | `bing_cn,brave` |
 | `--profile` | Engine profile | `agent` |
-| `--fallback` | Engines used only when results are insufficient | none |
+| `--fallback` | Engines used only when results are insufficient | `yahoo,presearch` |
+| `--no-fallback` | Disable fallback engines | false |
 | `-n, --max-results` | Max results per engine | 5 |
 | `--timeout` | Per-engine timeout (seconds) | 10 |
 | `--proxy` | Proxy URL for all requests | none |
@@ -200,7 +201,9 @@ Default `map` link types: `content,directory`.
 
 google, duckduckgo, brave, yahoo, mojeek, startpage, presearch, bing_cn, baidu, sogou, sogou_weixin, sogou_zhihu
 
-`webcli-lite serper` defaults to `bing_cn,brave`. Other engines are available through `--engines`, `--profile`, or `--fallback`. Use `sogou_zhihu` explicitly; it is more likely to return Sogou antispider pages.
+`webcli-lite serper` defaults to `bing_cn,brave` and uses `yahoo,presearch` only when the primary engines return fewer than `--min-results` results. Other engines are available through `--engines`, `--profile`, or `--fallback`. Use `sogou_zhihu` explicitly; it is more likely to return Sogou antispider pages.
+
+Results from multiple engines are merged by rank, not by engine block, so default output interleaves `bing_cn` and `brave` candidates.
 
 ## 中文搜索
 
@@ -241,16 +244,18 @@ rg -i "install|quickstart|auth|api key" "$TMPDIR/links.tsv"
 webcli-lite 面向本地 Agent 按需搜索场景，默认采用温和请求策略：
 
 - 只允许请求 `http` / `https` URL。
-- 安全模块支持 best-effort DNS 校验，可用于后续用户 URL 抓取能力，阻止 localhost、内网地址、链路本地地址、保留地址、组播地址等内部目标。
+- `fetch` / `map` 默认使用 `--dns-policy local-agent`，兼容本地代理常见的 `198.18.0.0/15` fake-ip DNS。
+- 需要服务端式严格 DNS 校验时，使用 `--dns-policy strict`。
+- 安全模块支持 best-effort DNS 校验，可用于用户 URL 抓取能力，阻止 localhost、内网地址、链路本地地址、保留地址、组播地址等内部目标。
 - 用户 URL 安全模式会逐跳校验重定向目标，避免公网 URL 跳转到内部地址。
 - 内置搜索引擎 URL 是代码固定的公网域名，不是用户输入；搜索路径会跳过 DNS SSRF 校验，以兼容本地 fake-ip DNS/代理环境。
 - 响应体默认限制为 5MB，避免异常响应或压缩炸弹拖垮进程。
 - 一次 `search()` 内每个 engine 使用稳定的浏览器 impersonation profile，避免单次任务内反复抖动指纹。
 - `429` 不重试；`5xx` 等临时服务端错误最多重试一次；验证码/安全验证/challenge 页面不重试。
-- 常见 challenge、consent wall、JS-only 空壳页会进入 `unresponsive_engines`，不会伪装成成功结果。
+- 常见 challenge、consent wall、JS-only 空壳页和裸 JS cookie challenge 不会伪装成成功结果。
 - `fetch` 和 `map` 复用同一套安全请求层，并把单页读取结果交给离线正文抽取器转换成 Markdown 或链接 JSON。
 
-DNS 校验是面向用户 URL 抓取的本地 Agent 安全防线，不是完整 DNS pinning；HTTP 传输层仍可能自行解析域名。webcli-lite 不绕过验证码、不使用代理池、不做浏览器渲染。
+DNS 校验是面向用户 URL 抓取的本地 Agent 安全防线，不是完整 DNS pinning；HTTP 传输层仍可能自行解析域名。`local-agent` policy 只对 hostname 的 fake-ip DNS 放行，IP literal、localhost 和真实私网地址仍会被拦截。webcli-lite 不绕过验证码、不使用代理池、不做浏览器渲染。
 
 ## For OpenClaw and AI agents
 

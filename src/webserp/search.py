@@ -112,7 +112,7 @@ async def search(
 
     succeeded = []
     failed = []
-    all_results: list[Result] = []
+    result_sets: list[list[Result]] = []
 
     async with AsyncSession() as session:
         # Engine URLs are fixed by code, not user supplied. Keep body caps,
@@ -131,16 +131,9 @@ async def search(
             failed.append([engine_name, error])
         else:
             succeeded.append(engine_name)
-            all_results.extend(results)
+            result_sets.append(results)
 
-    # Deduplicate by URL (keep first occurrence)
-    seen_urls: set[str] = set()
-    deduped: list[Result] = []
-    for r in all_results:
-        normalized = r.url.rstrip("/").lower()
-        if normalized not in seen_urls:
-            seen_urls.add(normalized)
-            deduped.append(r)
+    deduped = _merge_ranked_results(result_sets)
 
     return {
         "query": query,
@@ -149,3 +142,21 @@ async def search(
         "suggestions": [],
         "unresponsive_engines": failed,
     }
+
+
+def _merge_ranked_results(result_sets: list[list[Result]]) -> list[Result]:
+    """Merge engine result sets by rank so one engine cannot dominate the top."""
+    seen_urls: set[str] = set()
+    deduped: list[Result] = []
+    max_len = max((len(results) for results in result_sets), default=0)
+    for index in range(max_len):
+        for results in result_sets:
+            if index >= len(results):
+                continue
+            result = results[index]
+            normalized = result.url.rstrip("/").lower()
+            if normalized in seen_urls:
+                continue
+            seen_urls.add(normalized)
+            deduped.append(result)
+    return deduped

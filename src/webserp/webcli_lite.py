@@ -16,11 +16,12 @@ from .client import DEFAULT_MAX_BODY_BYTES, fetch_response
 from .engines import ALL_ENGINES
 from .errors import BlockedUrlError, WebSerpError
 from .search import search
-from .security import is_blocked_ip, validate_http_url
+from .security import LOCAL_AGENT_DNS_POLICY, STRICT_DNS_POLICY, is_blocked_ip, validate_http_url
 from .webfetch import extract
 from .webfetch.types import Link, WebFetchResult
 
 SERPER_DEFAULT_ENGINES = ["bing_cn", "brave"]
+SERPER_DEFAULT_FALLBACK_ENGINES = ["yahoo", "presearch"]
 SERPER_DEFAULT_MAX_RESULTS = 5
 FETCH_DEFAULT_MAX_MARKDOWN_CHARS = 20_000
 MAP_DEFAULT_LINK_TYPES = {"content", "directory"}
@@ -102,7 +103,12 @@ def _build_parser() -> argparse.ArgumentParser:
         default="agent",
         help="Engine profile (default: agent)",
     )
-    serper.add_argument("--fallback", default=None, help="Comma-separated fallback engines used only when results are insufficient")
+    serper.add_argument(
+        "--fallback",
+        default=",".join(SERPER_DEFAULT_FALLBACK_ENGINES),
+        help="Comma-separated fallback engines used only when results are insufficient (default: yahoo,presearch)",
+    )
+    serper.add_argument("--no-fallback", action="store_true", help="Disable fallback engines")
     serper.add_argument("--min-results", type=_non_negative_int, default=10, help="Minimum result count before fallback runs (default: 10)")
     serper.add_argument("-n", "--max-results", type=_positive_int, default=SERPER_DEFAULT_MAX_RESULTS, help="Max results per engine (default: 5)")
     serper.add_argument("--timeout", type=_positive_int, default=10, help="Per-engine timeout in seconds (default: 10)")
@@ -156,6 +162,12 @@ def _add_fetch_network_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--proxy", default=None, help="Proxy URL")
     parser.add_argument("--max-body-bytes", type=_positive_int, default=DEFAULT_MAX_BODY_BYTES, help="Maximum response body size in bytes")
     parser.add_argument("--retries", type=_non_negative_int, default=0, help="Retries for transient 5xx errors (default: 0)")
+    parser.add_argument(
+        "--dns-policy",
+        choices=[LOCAL_AGENT_DNS_POLICY, STRICT_DNS_POLICY],
+        default=LOCAL_AGENT_DNS_POLICY,
+        help="DNS safety policy for live fetches (default: local-agent)",
+    )
 
 
 async def _handle_serper(args: argparse.Namespace) -> int:
@@ -167,7 +179,7 @@ async def _handle_serper(args: argparse.Namespace) -> int:
         raise CliError("ArgumentError", "serper requires a query")
 
     engines = _engine_list(args.engines, profile=args.profile)
-    fallback = _parse_csv(args.fallback)
+    fallback = [] if args.no_fallback else _parse_csv(args.fallback)
     if fallback:
         _validate_engines(fallback)
 
@@ -292,6 +304,7 @@ async def _load_page(args: argparse.Namespace) -> dict[str, Any]:
         timeout=args.timeout,
         proxy=args.proxy,
         max_body_bytes=args.max_body_bytes,
+        dns_policy=args.dns_policy,
         retries=args.retries,
     )
     return {"html": response.text, "url": args.url, "final_url": response.url, "status": response.status}
@@ -398,16 +411,30 @@ def _merge_search_results(primary: dict[str, Any], fallback: dict[str, Any]) -> 
     merged = dict(primary)
     results = []
     seen = set()
-    for result in primary["results"] + fallback["results"]:
-        normalized = result["url"].rstrip("/").lower()
-        if normalized in seen:
-            continue
-        seen.add(normalized)
-        results.append(result)
+    for result_set in _ranked_result_sets(primary["results"], fallback["results"]):
+        for result in result_set:
+            normalized = result["url"].rstrip("/").lower()
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            results.append(result)
     merged["results"] = results
     merged["number_of_results"] = len(results)
     merged["unresponsive_engines"] = primary["unresponsive_engines"] + fallback["unresponsive_engines"]
     return merged
+
+
+def _ranked_result_sets(*result_sets: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+    ranked: list[list[dict[str, Any]]] = []
+    max_len = max((len(results) for results in result_sets), default=0)
+    for index in range(max_len):
+        row = []
+        for results in result_sets:
+            if index < len(results):
+                row.append(results[index])
+        if row:
+            ranked.append(row)
+    return ranked
 
 
 def _map_link_types(args: argparse.Namespace) -> set[str]:

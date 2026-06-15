@@ -19,6 +19,25 @@ class ChallengeDetectionTest(unittest.TestCase):
         self.assertTrue(is_js_only_shell(html))
         self.assertTrue(is_challenge_page(html))
 
+    def test_detects_short_script_only_shell(self):
+        html = "<html><body><script>" + ("var arg1='abc';" * 200) + "</script></body></html>"
+        self.assertTrue(is_js_only_shell(html))
+        self.assertTrue(is_challenge_page(html))
+
+    def test_detects_raw_javascript_cookie_challenge(self):
+        text = "var arg1='abc';function setCookie(){document.cookie=arg1;}window.location.href='/journal/paperinformation';"
+        self.assertTrue(is_challenge_page(text))
+
+    def test_does_not_flag_short_normal_page_with_script(self):
+        html = """
+        <html><body>
+          <article><p>This short article has useful visible text and a small analytics script.</p></article>
+          <script>console.log("analytics")</script>
+        </body></html>
+        """
+        self.assertFalse(is_js_only_shell(html))
+        self.assertFalse(is_challenge_page(html))
+
     def test_does_not_flag_normal_captcha_article(self):
         html = """
         <html>

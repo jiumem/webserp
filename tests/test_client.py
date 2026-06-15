@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 from webserp.client import FetchContext, fetch, fetch_response
 from webserp.errors import BlockedUrlError, BodyTooLargeError, ChallengePageError, HttpStatusError
+from webserp.security import clear_dns_cache
 
 
 class FakeResponse:
@@ -178,6 +179,29 @@ class ClientTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(session.calls), 2)
         self.assertFalse(session.calls[0][1]["allow_redirects"])
         self.assertEqual(session.calls[1][0][1], "https://93.184.216.34/final")
+
+    async def test_local_agent_dns_policy_allows_fake_ip_hostname_redirects(self):
+        clear_dns_cache()
+        session = FakeSession([
+            FakeStreamResponse(
+                [b""],
+                status=302,
+                headers={"location": "https://docs.example.test/final"},
+                url="https://example.test/start",
+            ),
+            FakeStreamResponse([b"ok"], url="https://docs.example.test/final"),
+        ])
+
+        with patch(
+            "webserp.security.socket.getaddrinfo",
+            return_value=[(0, 0, 0, "", ("198.18.3.174", 443))],
+        ):
+            text = await fetch("https://example.test/start", session=session, dns_policy="local-agent")
+
+        self.assertEqual(text, "ok")
+        self.assertEqual(len(session.calls), 2)
+        self.assertFalse(session.calls[0][1]["allow_redirects"])
+        self.assertEqual(session.calls[1][0][1], "https://docs.example.test/final")
 
     async def test_challenge_is_not_retried(self):
         session = FakeSession([

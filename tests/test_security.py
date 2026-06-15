@@ -3,7 +3,7 @@ import unittest
 from unittest.mock import patch
 
 from webserp.errors import BlockedUrlError, InvalidUrlError
-from webserp.security import clear_dns_cache, is_blocked_ip, validate_http_url, validate_public_http_url
+from webserp.security import clear_dns_cache, is_blocked_ip, is_fake_ip, validate_http_url, validate_public_http_url
 
 
 class SecurityTest(unittest.IsolatedAsyncioTestCase):
@@ -49,6 +49,42 @@ class SecurityTest(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(BlockedUrlError):
                 await validate_public_http_url("https://example.test/")
 
+    async def test_strict_policy_blocks_fake_ip_dns_answers(self):
+        with patch(
+            "webserp.security.socket.getaddrinfo",
+            return_value=[
+                (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("198.18.3.174", 443)),
+            ],
+        ):
+            with self.assertRaises(BlockedUrlError):
+                await validate_public_http_url("https://example.test/")
+
+    async def test_local_agent_policy_allows_fake_ip_dns_answers_for_hostnames(self):
+        with patch(
+            "webserp.security.socket.getaddrinfo",
+            return_value=[
+                (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("198.18.3.174", 443)),
+            ],
+        ):
+            self.assertEqual(
+                await validate_public_http_url("https://example.test/path", dns_policy="local-agent"),
+                "https://example.test/path",
+            )
+
+    async def test_local_agent_policy_still_blocks_real_private_dns_answers(self):
+        with patch(
+            "webserp.security.socket.getaddrinfo",
+            return_value=[
+                (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.5", 443)),
+            ],
+        ):
+            with self.assertRaises(BlockedUrlError):
+                await validate_public_http_url("https://example.test/", dns_policy="local-agent")
+
+    async def test_local_agent_policy_still_blocks_fake_ip_literals(self):
+        with self.assertRaises(BlockedUrlError):
+            await validate_public_http_url("https://198.18.3.174/", dns_policy="local-agent")
+
     async def test_allows_domains_that_resolve_to_public_addresses(self):
         with patch(
             "webserp.security.socket.getaddrinfo",
@@ -66,6 +102,7 @@ class SecurityTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(is_blocked_ip(ipaddress.ip_address("127.0.0.1")))
         self.assertTrue(is_blocked_ip(ipaddress.ip_address("169.254.169.254")))
+        self.assertTrue(is_fake_ip(ipaddress.ip_address("198.18.3.174")))
         self.assertFalse(is_blocked_ip(ipaddress.ip_address("93.184.216.34")))
 
 

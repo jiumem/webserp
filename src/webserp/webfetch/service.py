@@ -7,6 +7,7 @@ from typing import Any
 from curl_cffi.requests import AsyncSession
 
 from webserp.client import DEFAULT_MAX_BODY_BYTES, DEFAULT_MAX_REDIRECTS, fetch_response
+from webserp.security import DNSPolicy, STRICT_DNS_POLICY
 
 from .extractor import extract
 from .types import WebFetchResult
@@ -22,6 +23,7 @@ async def webfetch(
     cookies: dict[str, str] | None = None,
     max_body_bytes: int = DEFAULT_MAX_BODY_BYTES,
     validate_url: bool = True,
+    dns_policy: DNSPolicy = STRICT_DNS_POLICY,
     retries: int = 0,
     allow_redirects: bool = True,
     max_redirects: int = DEFAULT_MAX_REDIRECTS,
@@ -39,6 +41,7 @@ async def webfetch(
         impersonate=impersonate,
         max_body_bytes=max_body_bytes,
         validate_url=validate_url,
+        dns_policy=dns_policy,
         retries=retries,
         allow_redirects=allow_redirects,
         max_redirects=max_redirects,

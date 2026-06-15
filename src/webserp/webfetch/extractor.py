@@ -15,7 +15,7 @@ from .structured_data import extract_data_island_markdown, extract_structured_da
 from .topology import LinkTopologyAnalyzer
 from .types import CandidateScore, ExtractionCandidate, MarkdownAssets, WebFetchResult
 
-CONTENT_CLASS_RE = re.compile(r"article|content|post|entry|body|main|story", re.I)
+CONTENT_CLASS_RE = re.compile(r"article|content|document|docs?|markdown|md-content|post|entry|body|main|story", re.I)
 NOISE_CLASS_RE = re.compile(
     r"sidebar|menu|nav|footer|header|cookie|popup|modal|share|social|related|recommend|advert|sponsor|promo|breadcrumb",
     re.I,
@@ -42,7 +42,14 @@ BLOCK_XPATH = (
     "//article | //main | //*[@role='main'] | //h1 | //h2 | //h3 | //h4 | //h5 | //h6 | "
     "//p | //pre | //table | //ul | //ol | //blockquote | //img"
 )
-CANDIDATE_XPATH = "//article | //main | //*[@role='main'] | //section | //div | //td | //body"
+SEMANTIC_XPATH = (
+    "//article | //main | //*[@role='main'] | //*[@id='content'] | //*[@id='content-inner'] | "
+    "//*[@id='artibody'] | //*[@id='article_content'] | "
+    "//*[contains(concat(' ', normalize-space(@class), ' '), ' body ')] | "
+    "//*[contains(@class, 'article-content')] | //*[contains(@class, 'content-panel')] | "
+    "//*[contains(@class, 'document')] | //*[contains(@class, 'md-content')]"
+)
+CANDIDATE_XPATH = f"{SEMANTIC_XPATH} | //section | //div | //td | //body"
 
 
 def extract(html_text: str, url: str, *, final_url: str | None = None, status: int = 200) -> WebFetchResult:
@@ -76,6 +83,8 @@ def extract(html_text: str, url: str, *, final_url: str | None = None, status: i
         warnings.append("low_text_content")
     if winner.name == "body_fallback":
         warnings.append("fallback_strategy_used")
+    if not winner.markdown and _compact_text(root.text_content()):
+        warnings.append("empty_extraction")
 
     return WebFetchResult(
         url=url,
@@ -126,7 +135,7 @@ def _build_candidates(
 ) -> list[ExtractionCandidate]:
     candidates: list[ExtractionCandidate] = []
 
-    semantic = _first(root.xpath("//article | //main | //*[@role='main']"))
+    semantic = _first(root.xpath(SEMANTIC_XPATH))
     if semantic is not None:
         candidates.append(_element_candidate("semantic", [semantic], base_url, title, poison_ids))
 
@@ -308,19 +317,23 @@ def _poison_ids(root: html.HtmlElement, topology: LinkTopologyAnalyzer) -> set[s
     for node in root.xpath("//div | //section"):
         if _node_key(node) in ids:
             continue
+        if _is_content_like_node(node):
+            continue
         if node.xpath(".//article | .//main | .//*[@role='main']"):
             continue
         attrs = " ".join(filter(None, [node.get("class"), node.get("id")]))
-        if NOISE_CLASS_RE.search(attrs) or topology.link_mass(node) > 55.0:
+        if NOISE_CLASS_RE.search(attrs) or _is_link_cluster_noise(node, topology):
             ids.update(_node_key(child) for child in node.iter())
 
     for node in root.xpath("//table | //tr | //td | //th"):
         if _node_key(node) in ids:
             continue
+        if _is_content_like_node(node):
+            continue
         if node.xpath(".//article | .//main | .//*[@role='main']"):
             continue
         attrs = " ".join(filter(None, [node.get("class"), node.get("id")]))
-        if TABLE_NOISE_CLASS_RE.search(attrs) or topology.link_mass(node) > 55.0:
+        if TABLE_NOISE_CLASS_RE.search(attrs) or _is_link_cluster_noise(node, topology):
             ids.update(_node_key(child) for child in node.iter())
     return ids
 
@@ -382,6 +395,30 @@ def _first(values: Iterable[object]) -> html.HtmlElement | None:
 
 def _tag(node: etree._Element) -> str:
     return str(node.tag).lower() if isinstance(node.tag, str) else ""
+
+
+def _is_content_like_node(node: etree._Element) -> bool:
+    tag = _tag(node)
+    if tag in {"article", "main"}:
+        return True
+    if (node.get("role") or "").lower() == "main":
+        return True
+    attrs = " ".join(filter(None, [node.get("class"), node.get("id")]))
+    if CONTENT_CLASS_RE.search(attrs):
+        return True
+    return (node.get("id") or "").lower() in {"content", "content-inner", "artibody", "article_content"}
+
+
+def _is_link_cluster_noise(node: etree._Element, topology: LinkTopologyAnalyzer) -> bool:
+    if topology.link_mass(node) <= 55.0:
+        return False
+    if _link_density(node) < 0.55:
+        return False
+    long_paragraphs = [
+        paragraph for paragraph in node.xpath(".//p")
+        if len(_compact_text(paragraph.text_content())) >= 80
+    ]
+    return len(long_paragraphs) < 2
 
 
 def _compact_text(text: str) -> str:

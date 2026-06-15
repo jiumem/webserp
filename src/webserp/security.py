@@ -7,12 +7,17 @@ import ipaddress
 import socket
 import time
 from dataclasses import dataclass
+from typing import Literal
 from urllib.parse import urlsplit, urlunsplit
 
 from .errors import BlockedUrlError, InvalidUrlError
 
 
 DNS_CACHE_TTL_SECONDS = 300
+LOCAL_AGENT_DNS_POLICY = "local-agent"
+STRICT_DNS_POLICY = "strict"
+DNSPolicy = Literal["strict", "local-agent"]
+FAKE_IP_V4_NETWORK = ipaddress.ip_network("198.18.0.0/15")
 _DNS_CACHE: dict[tuple[str, int], tuple[float, list[ipaddress.IPv4Address | ipaddress.IPv6Address]]] = {}
 
 
@@ -50,12 +55,18 @@ def validate_http_url(raw: str) -> ValidatedUrl:
     return ValidatedUrl(url=url, host=parsed.hostname, port=port)
 
 
-async def validate_public_http_url(raw: str) -> str:
+async def validate_public_http_url(raw: str, *, dns_policy: DNSPolicy = STRICT_DNS_POLICY) -> str:
     """Parse, resolve, and reject private/internal destinations.
 
     This is a best-effort guard for local-agent fetches. It validates before
     handing the URL to the HTTP client; the transport may still resolve again.
+
+    ``local-agent`` keeps strict checks for URL syntax, localhost, IP literals,
+    and redirects to real private/internal addresses, but allows hostname DNS
+    answers in 198.18.0.0/15. That range is commonly used by local proxy
+    fake-ip DNS and is not directly routable as a target IP literal.
     """
+    _validate_dns_policy(dns_policy)
     validated = validate_http_url(raw)
     host = validated.host
 
@@ -72,9 +83,15 @@ async def validate_public_http_url(raw: str) -> str:
         raise InvalidUrlError("host did not resolve to any addresses")
 
     for addr in addrs:
+        if dns_policy == LOCAL_AGENT_DNS_POLICY and is_fake_ip(addr):
+            continue
         _reject_blocked_ip(addr)
 
     return validated.url
+
+
+def is_fake_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    return isinstance(ip, ipaddress.IPv4Address) and ip in FAKE_IP_V4_NETWORK
 
 
 def is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
@@ -93,6 +110,11 @@ def is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
 
 def clear_dns_cache() -> None:
     _DNS_CACHE.clear()
+
+
+def _validate_dns_policy(dns_policy: str) -> None:
+    if dns_policy not in {STRICT_DNS_POLICY, LOCAL_AGENT_DNS_POLICY}:
+        raise InvalidUrlError(f"unknown DNS policy: {dns_policy}")
 
 
 def _parse_ip_literal(host: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:

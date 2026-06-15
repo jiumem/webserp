@@ -45,6 +45,8 @@ def is_challenge_page(
         return True
     if _is_consent_wall(title, url_lower, text):
         return True
+    if _is_raw_javascript_challenge(text, lower):
+        return True
     if status == 202 and "challenge" in lower and length < 50_000:
         return True
 
@@ -65,10 +67,18 @@ def raise_for_challenge(
 
 def is_js_only_shell(text: str) -> bool:
     """Detect large SPA shells with very little visible text."""
-    if len(text) < 5_000 or "<script" not in text.lower():
+    lower = text.lower()
+    if "<script" not in lower:
         return False
 
-    lower = text.lower()
+    visible_text = _visible_text(text)
+    word_count = len(visible_text.split())
+    if word_count < 10 and _script_text_ratio(text) >= 0.6:
+        return True
+
+    if len(text) < 5_000:
+        return False
+
     has_spa_marker = any(
         marker in lower
         for marker in (
@@ -84,8 +94,6 @@ def is_js_only_shell(text: str) -> bool:
     if not has_spa_marker:
         return False
 
-    visible_text = _visible_text(text)
-    word_count = len(visible_text.split())
     return word_count < 50
 
 
@@ -100,6 +108,29 @@ def _visible_text(text: str) -> str:
     stripped = _SCRIPT_STYLE_RE.sub(" ", text)
     stripped = _TAG_RE.sub(" ", stripped)
     return " ".join(stripped.split())
+
+
+def _script_text_ratio(text: str) -> float:
+    script_chars = sum(len(match.group(0)) for match in _SCRIPT_STYLE_RE.finditer(text))
+    return script_chars / max(1, len(text))
+
+
+def _is_raw_javascript_challenge(text: str, lower: str) -> bool:
+    stripped = text.lstrip()
+    if not stripped or stripped.startswith(("<", "{", "[")):
+        return False
+    prefix = stripped[:2_000].lower()
+    if not re.search(r"\b(var|let|const|function)\b", prefix):
+        return False
+    markers = (
+        "document.cookie",
+        "window.location",
+        "location.href",
+        "arg1",
+        "setcookie",
+        "eval(",
+    )
+    return any(marker in lower for marker in markers)
 
 
 def _is_duckduckgo_challenge(lower: str) -> bool:
