@@ -19,22 +19,51 @@ webcli-lite map "URL_FROM_RESULT"
 
 ## Search
 
-默认搜索已经是 Agent 用法的安全路径：
+默认搜索已经是 Agent 用法的安全路径，适合中文、英文和中英混合查询：
 
 - engines: `bing_cn,brave`
 - max results: 每个引擎 5 条
 - output: JSON stdout
 - errors: JSON stderr
 
-常用命令：
+先用用户原始语言搜索，不要先翻译或改写得过宽：
 
 ```bash
 webcli-lite serper "query"
-webcli-lite serper "query" --profile cn-deep
-webcli-lite serper "query" --fallback yahoo,presearch
 ```
 
-只在默认结果明显不足或用户要求更广覆盖时扩展引擎。不要默认使用 `--profile all`。中文深搜优先用 `--profile cn-deep`；`google`、`duckduckgo`、`startpage`、`mojeek`、`sogou_zhihu` 只在明确需要时使用。
+需要中文结果更深时：
+
+```bash
+webcli-lite serper "query" --profile cn-deep
+```
+
+建议英文搜索的场景：
+
+- IT 技术文档、开源项目、SDK/API、错误码、issue、release notes。
+- 国际论文、期刊、arXiv、PubMed、IEEE、ACM、Springer、Nature、Science 等资料。
+- 国际标准、RFC、W3C、IETF、ISO/IEC、CNCF、Kubernetes、Python/Node/Rust 等官方文档。
+- 海外公司、英文产品、英文法规政策、国际新闻源。
+- 中文搜索结果明显是转载、摘要、过时内容，而问题需要原始出处。
+
+英文搜索时保留专有名词、错误码、论文题名、库名和版本号，不要翻译它们：
+
+```bash
+webcli-lite serper "pydantic v2 model_validator examples"
+webcli-lite serper "\"Attention Is All You Need\" paper PDF"
+webcli-lite serper "site:docs.python.org asyncio TaskGroup"
+```
+
+中英文都可能有价值时，先跑用户原始语言；结果不足时再换语言重查一次。不要同时对同一问题连续跑多组宽泛 query。
+
+扩展引擎只在默认结果不足、用户要求更广覆盖、或需要特定中文来源时使用：
+
+```bash
+webcli-lite serper "query" --fallback yahoo,presearch
+webcli-lite serper "query" --profile cn-deep
+```
+
+不要默认使用 `--profile all`。`google`、`duckduckgo`、`startpage`、`mojeek`、`sogou_zhihu` 只在明确需要时使用。搜索结果里如果某个引擎进入 `unresponsive_engines`，不要立即重试同一引擎；先使用其他结果。
 
 ## Fetch
 
