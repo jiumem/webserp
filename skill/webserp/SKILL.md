@@ -56,11 +56,33 @@ webcli-lite serper "site:docs.python.org asyncio TaskGroup"
 
 中英文都可能有价值时，先跑用户原始语言；结果不足时再换语言重查一次。不要同时对同一问题连续跑多组宽泛 query。
 
+可用 profile：
+
+- `agent`: `bing_cn,brave`，默认 Agent 搜索。
+- `zh`: `bing_cn,brave`，中文/中英混合默认路径。
+- `en`: `brave,bing_cn`，英文优先但保留中文 Bing 兜底。
+- `cn-deep`: `bing_cn,baidu,sogou,sogou_weixin`，中文深搜、微信公众号内容。
+- `mixed`: `bing_cn,brave,baidu,sogou,sogou_weixin,yahoo,presearch`，需要更广覆盖时使用。
+- `all`: 全部引擎，只用于明确的诊断或广泛 sweep。
+
+可用 engines：
+
+- `bing_cn`: 默认中文/混合搜索主力，结构相对稳定。
+- `brave`: 默认英文/国际网页搜索主力。
+- `baidu`: 中文网页补充，适合中文站点、政策、百科、论坛等。
+- `sogou`: 中文网页补充。
+- `sogou_weixin`: 微信公众号内容。
+- `sogou_zhihu`: 知乎内容，但更容易触发搜狗反爬，非默认。
+- `yahoo`, `presearch`: 默认不足时的低频 fallback。
+- `google`, `duckduckgo`, `startpage`, `mojeek`: 非默认英文/国际补充，只在明确需要时使用。
+
 扩展引擎只在默认结果不足、用户要求更广覆盖、或需要特定中文来源时使用：
 
 ```bash
 webcli-lite serper "query" --fallback yahoo,presearch
 webcli-lite serper "query" --profile cn-deep
+webcli-lite serper "query" --engines brave,yahoo,presearch
+webcli-lite serper "query" --engines sogou_weixin
 ```
 
 不要默认使用 `--profile all`。`google`、`duckduckgo`、`startpage`、`mojeek`、`sogou_zhihu` 只在明确需要时使用。搜索结果里如果某个引擎进入 `unresponsive_engines`，不要立即重试同一引擎；先使用其他结果。
