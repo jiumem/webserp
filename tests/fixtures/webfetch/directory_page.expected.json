@@ -1,0 +1,25 @@
+{
+  "url": "https://example.com/resources/agent-tooling",
+  "strategy_in": ["semantic", "scored"],
+  "candidate_names": ["semantic", "scored", "structural", "body_fallback"],
+  "must_include": [
+    "Agent Tooling Resource Index",
+    "bounded network behavior note",
+    "offline checks pass"
+  ],
+  "must_exclude": [
+    "Reference directory",
+    "Installing local Agent tools safely",
+    "Privacy Policy"
+  ],
+  "metadata": {
+    "title": "Agent Tooling Resource Index",
+    "language": "en"
+  },
+  "min_text_chars": 220,
+  "min_link_types": {
+    "directory": 3,
+    "navigation": 2,
+    "noise": 1
+  }
+}

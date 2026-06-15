@@ -1,0 +1,29 @@
+{
+  "url": "https://example.com/news/climate-policy",
+  "strategy_in": ["semantic", "scored"],
+  "candidate_names": ["semantic", "scored", "structural", "body_fallback"],
+  "must_include": [
+    "Climate Policy Update",
+    "120 electric buses",
+    "grid upgrades for transit depots",
+    "May 12, 2026"
+  ],
+  "must_exclude": [
+    "Cookie settings",
+    "Share this article",
+    "Newsletter sign up"
+  ],
+  "metadata": {
+    "title": "Climate Policy Update",
+    "language": "en",
+    "published_date": "2026-05-12T09:30:00Z"
+  },
+  "min_text_chars": 220,
+  "min_images": 1,
+  "min_structured_data": 1,
+  "min_link_types": {
+    "content": 1,
+    "navigation": 2,
+    "noise": 1
+  }
+}

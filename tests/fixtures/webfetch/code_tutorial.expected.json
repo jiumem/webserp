@@ -1,0 +1,27 @@
+{
+  "url": "https://docs.example.com/tutorials/html-streams",
+  "strategy_in": ["scored", "structural"],
+  "candidate_names": ["scored", "structural", "body_fallback"],
+  "must_include": [
+    "Parsing HTML Streams in Python",
+    "count bytes before decoding text",
+    "def iter_chunks(response):",
+    "Declare a maximum body size"
+  ],
+  "must_exclude": [
+    "Top tutorials",
+    "Django deployment",
+    "Sign up"
+  ],
+  "metadata": {
+    "title": "Parsing HTML Streams in Python",
+    "language": "en"
+  },
+  "min_text_chars": 230,
+  "min_code_blocks": 1,
+  "code_languages": ["python"],
+  "min_link_types": {
+    "directory": 2,
+    "noise": 1
+  }
+}

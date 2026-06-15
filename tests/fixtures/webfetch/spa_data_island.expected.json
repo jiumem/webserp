@@ -1,0 +1,21 @@
+{
+  "url": "https://example.com/reports/client-rendered",
+  "strategy_in": ["data_island", "data_enriched"],
+  "candidate_names": ["body_fallback", "data_island"],
+  "must_include": [
+    "Page Data",
+    "static data island contains the report body",
+    "reduced manual review time by 37 percent",
+    "required citation"
+  ],
+  "must_exclude": [
+    "__NEXT_DATA__",
+    "pageProps"
+  ],
+  "metadata": {
+    "title": "Client Rendered Report",
+    "language": "en"
+  },
+  "min_text_chars": 120,
+  "min_structured_data": 1
+}

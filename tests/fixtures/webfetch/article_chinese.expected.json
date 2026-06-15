@@ -1,0 +1,27 @@
+{
+  "url": "https://example.cn/ai/inference-cost",
+  "strategy_in": ["semantic", "scored"],
+  "candidate_names": ["semantic", "scored", "structural", "body_fallback"],
+  "must_include": [
+    "国产大模型推理成本继续下降",
+    "推理框架优化",
+    "本地 Agent 用户",
+    "稳定可复现"
+  ],
+  "must_exclude": [
+    "相关阅读",
+    "广告合作",
+    "分享到微博"
+  ],
+  "metadata": {
+    "title": "国产大模型推理成本继续下降",
+    "language": "zh-CN",
+    "author": "林川"
+  },
+  "min_text_chars": 150,
+  "min_cjk_chars": 120,
+  "min_link_types": {
+    "navigation": 2,
+    "noise": 1
+  }
+}

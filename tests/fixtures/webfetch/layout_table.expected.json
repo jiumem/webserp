@@ -1,0 +1,22 @@
+{
+  "url": "https://example.com/archive/legacy-layout",
+  "strategy_in": ["scored", "structural", "body_fallback"],
+  "candidate_names": ["scored", "structural", "body_fallback"],
+  "must_include": [
+    "Legacy Layout Page",
+    "table for layout",
+    "must not destroy the order"
+  ],
+  "must_exclude": [
+    "Archive",
+    "Login",
+    "| Archive |",
+    "| Login |"
+  ],
+  "metadata": {
+    "title": "Legacy Layout Page",
+    "language": "en"
+  },
+  "min_text_chars": 150,
+  "max_table_rows": 0
+}
