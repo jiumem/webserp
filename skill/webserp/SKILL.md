@@ -1,6 +1,6 @@
 ---
 name: webserp
-description: Local-agent web CLI for current web search and page reading. Use when `webcli-lite` is available and Codex needs to run `webcli-lite serper` for search, `webcli-lite fetch` for Markdown page reading, or `webcli-lite map` for link discovery. Default search uses Bing China and Brave, 5 results each, with no API keys.
+description: Use when Codex needs current web search, Markdown page reading, or link discovery through an available `webcli-lite` CLI.
 ---
 
 # webcli-lite
