@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import math
 import re
-from copy import deepcopy
 from typing import Iterable
 
 from lxml import etree, html
@@ -44,11 +43,13 @@ BLOCK_XPATH = (
 )
 SEMANTIC_XPATH = (
     "//article | //main | //*[@role='main'] | //*[@id='content'] | //*[@id='content-inner'] | "
-    "//*[@id='artibody'] | //*[@id='article_content'] | "
+    "//*[@id='artibody'] | //*[@id='article_content'] | //*[@id='UCAP-CONTENT'] | "
     "//*[contains(concat(' ', normalize-space(@class), ' '), ' body ')] | "
     "//*[contains(@class, 'article-content')] | //*[contains(@class, 'content-panel')] | "
-    "//*[contains(@class, 'document')] | //*[contains(@class, 'md-content')]"
+    "//*[contains(@class, 'document')] | //*[contains(@class, 'md-content')] | "
+    "//*[contains(@class, 'pages_content')]"
 )
+SEMANTIC_EXACT_XPATH = "//*[@id='content-inner'] | //*[@id='artibody'] | //*[@id='article_content'] | //*[@id='UCAP-CONTENT']"
 CANDIDATE_XPATH = f"{SEMANTIC_XPATH} | //section | //div | //td | //body"
 
 
@@ -58,7 +59,7 @@ def extract(html_text: str, url: str, *, final_url: str | None = None, status: i
     metadata = extract_metadata(raw_root, source_url)
     structured_data = extract_structured_data(html_text, raw_root)
 
-    root = deepcopy(raw_root)
+    root = _parse_html(html_text)
     _strip_non_content_nodes(root)
 
     topology = LinkTopologyAnalyzer(source_url)
@@ -77,6 +78,8 @@ def extract(html_text: str, url: str, *, final_url: str | None = None, status: i
             candidates.append(_markdown_candidate("data_enriched", enriched_md, metadata.title, best_dom.assets))
 
     winner = _best_candidate(candidates) or _empty_candidate()
+    markdown = _polish_markdown(winner.markdown, metadata.title)
+    text = markdown_to_text(markdown)
     links = topology.analyze(root, winner.assets.links)
     warnings = []
     if winner.score.text_chars < 120:
@@ -92,8 +95,8 @@ def extract(html_text: str, url: str, *, final_url: str | None = None, status: i
         status=status,
         title=metadata.title,
         description=metadata.description,
-        markdown=winner.markdown,
-        text=winner.text,
+        markdown=markdown,
+        text=text,
         links=links,
         images=_dedupe_images(winner.assets.images),
         code_blocks=winner.assets.code_blocks,
@@ -134,6 +137,10 @@ def _build_candidates(
     topology: LinkTopologyAnalyzer,
 ) -> list[ExtractionCandidate]:
     candidates: list[ExtractionCandidate] = []
+
+    semantic_exact = _first(root.xpath(SEMANTIC_EXACT_XPATH))
+    if semantic_exact is not None:
+        candidates.append(_element_candidate("semantic_exact", [semantic_exact], base_url, title, poison_ids))
 
     semantic = _first(root.xpath(SEMANTIC_XPATH))
     if semantic is not None:
@@ -215,6 +222,8 @@ def _score_candidate(
         title_bonus = 8.0
     if name == "body_fallback":
         noise_penalty += 18.0
+    if name == "semantic_exact":
+        structure_score += 40.0
     if name == "data_island":
         structure_score *= 0.5
         noise_penalty += 4.0
@@ -241,6 +250,247 @@ def _best_candidate(candidates: list[ExtractionCandidate]) -> ExtractionCandidat
     if not viable:
         return None
     return max(viable, key=lambda candidate: candidate.score.final_score)
+
+
+def _polish_markdown(markdown: str, title: str) -> str:
+    polished = markdown.strip()
+    if not polished:
+        return polished
+    polished = _trim_short_prelude_before_h1(polished, title)
+    polished = _trim_duplicate_h1_navigation(polished)
+    polished = _ensure_title_heading(polished, title)
+    return _strip_leading_notice_lines(polished, title)
+
+
+def _trim_short_prelude_before_h1(markdown: str, title: str) -> str:
+    lines = markdown.splitlines()
+    h1_index = _first_h1_index(lines)
+    if h1_index is None or h1_index == 0:
+        return markdown
+
+    prelude = "\n".join(lines[:h1_index]).strip()
+    if not prelude:
+        return "\n".join(lines[h1_index:]).strip()
+
+    prelude_text = markdown_to_text(prelude)
+    compact_prelude = _compact_text(prelude_text)
+    if not compact_prelude:
+        if _looks_like_navigation_prelude(prelude, prelude_text):
+            return "\n".join(lines[h1_index:]).strip()
+        return markdown
+    if len(compact_prelude) > 220:
+        return markdown
+
+    h1_text = _heading_text(lines[h1_index])
+    title_text = _display_title(title)
+    if _texts_overlap(compact_prelude, _compact_text(h1_text)):
+        return "\n".join(lines[h1_index:]).strip()
+    if _texts_overlap(compact_prelude, _compact_text(title_text)):
+        return "\n".join(lines[h1_index:]).strip()
+    if _looks_like_navigation_prelude(prelude, prelude_text):
+        return "\n".join(lines[h1_index:]).strip()
+    return markdown
+
+
+def _trim_duplicate_h1_navigation(markdown: str) -> str:
+    lines = markdown.splitlines()
+    first_h1 = _first_h1_index(lines)
+    if first_h1 is None:
+        return markdown
+
+    first_title = _compact_text(_heading_text(lines[first_h1]))
+    if not first_title:
+        return markdown
+
+    search_limit = min(len(lines), first_h1 + 24)
+    for index in range(first_h1 + 1, search_limit):
+        if not re.match(r"^#\s+\S", lines[index].strip()):
+            continue
+        if _compact_text(_heading_text(lines[index])) != first_title:
+            continue
+        between = "\n".join(lines[first_h1 + 1:index]).strip()
+        if _looks_like_navigation_prelude(between, markdown_to_text(between)):
+            tail = lines[index + 1:]
+            while tail and not tail[0].strip():
+                tail = tail[1:]
+            return "\n".join([lines[first_h1].strip(), "", *tail]).strip()
+    return markdown
+
+
+def _ensure_title_heading(markdown: str, title: str) -> str:
+    title_text = _display_title(title)
+    if not title_text:
+        return markdown
+
+    lines = markdown.splitlines()
+    h1_index = _first_h1_index(lines)
+    if h1_index == 0:
+        return markdown
+    if h1_index is not None:
+        first_h1 = _compact_text(_heading_text(lines[h1_index]))
+        title_compact = _compact_text(title_text)
+        if _texts_overlap(first_h1, title_compact):
+            return markdown
+        prelude = markdown_to_text("\n".join(lines[:h1_index]))
+        if len(_compact_text(prelude)) <= 220 and not _looks_like_question_metadata(prelude):
+            return markdown
+        return f"# {title_text}\n\n{_demote_h1_headings(markdown)}".strip()
+
+    first_index = _first_nonempty_index(lines)
+    if first_index is None:
+        return f"# {title_text}"
+
+    first_text = markdown_to_text(lines[first_index]).strip()
+    if _same_title_text(_compact_text(first_text), _compact_text(title_text)):
+        lines[first_index] = f"# {first_text or title_text}"
+        return "\n".join(lines).strip()
+
+    return f"# {title_text}\n\n{_demote_h1_headings(markdown)}".strip()
+
+
+def _demote_h1_headings(markdown: str) -> str:
+    return re.sub(r"(?m)^#(\s+\S)", r"##\1", markdown)
+
+
+def _looks_like_question_metadata(text: str) -> bool:
+    lower = text.lower()
+    return "asked" in lower and "viewed" in lower
+
+
+def _first_h1_index(lines: list[str]) -> int | None:
+    for index, line in enumerate(lines):
+        if re.match(r"^#\s+\S", line.strip()):
+            return index
+    return None
+
+
+def _first_nonempty_index(lines: list[str]) -> int | None:
+    for index, line in enumerate(lines):
+        if line.strip():
+            return index
+    return None
+
+
+def _heading_text(line: str) -> str:
+    return re.sub(r"^#{1,6}\s+", "", line.strip()).strip()
+
+
+def _display_title(title: str) -> str:
+    title = " ".join((title or "").split())
+    if not title:
+        return ""
+    pipe_parts = [part.strip() for part in title.split(" | ") if part.strip()]
+    if len(pipe_parts) > 1 and len(pipe_parts[0]) >= 4:
+        title = pipe_parts[0]
+
+    dash_parts = [part.strip() for part in title.split(" - ") if part.strip()]
+    if len(dash_parts) > 1 and len(dash_parts[0]) >= 4 and _looks_like_title_suffix(dash_parts[-1]):
+        return " - ".join(dash_parts[:-1])
+    return title
+
+
+def _looks_like_title_suffix(text: str) -> bool:
+    lower = text.lower()
+    suffix_markers = (
+        "api",
+        "apis",
+        "docs",
+        "documentation",
+        "developer",
+        "reference",
+        "web api",
+        "web apis",
+    )
+    return any(marker in lower for marker in suffix_markers)
+
+
+def _texts_overlap(left: str, right: str) -> bool:
+    if len(left) < 6 or len(right) < 6:
+        return False
+    return left in right or right in left
+
+
+def _same_title_text(left: str, right: str) -> bool:
+    if len(left) < 6 or len(right) < 6:
+        return False
+    if left == right:
+        return True
+    shorter, longer = sorted((left, right), key=len)
+    return shorter in longer and len(shorter) / len(longer) >= 0.75
+
+
+def _looks_like_navigation_prelude(markdown: str, text: str) -> bool:
+    lower = text.lower()
+    if any(
+        marker in lower
+        for marker in (
+            "view all docs",
+            "documentation",
+            "api reference",
+            "skip to content",
+            "repository files navigation",
+            "open more actions menu",
+            "read in english",
+            "access to this page requires authorization",
+            "changing directories",
+        )
+    ):
+        return True
+
+    nonempty = [line.strip() for line in markdown.splitlines() if line.strip()]
+    if not nonempty:
+        return False
+    image_or_link_lines = sum(1 for line in nonempty if line.startswith("![") or re.fullmatch(r"\[[^\]]+\]\([^)]+\)", line))
+    return image_or_link_lines / len(nonempty) >= 0.6
+
+
+def _strip_leading_notice_lines(markdown: str, title: str) -> str:
+    if "wikipedia" not in (title or "").lower() and "维基百科" not in (title or ""):
+        return markdown
+
+    lines = markdown.splitlines()
+    h1_index = _first_h1_index(lines)
+    if h1_index is None:
+        return markdown
+
+    cleaned = lines[: h1_index + 1]
+    limit = min(len(lines), h1_index + 28)
+    index = h1_index + 1
+    while index < len(lines):
+        line = lines[index]
+        if index < limit and _is_leading_notice_line(line):
+            index += 1
+            continue
+        if cleaned and cleaned[-1].startswith("#") and line.strip():
+            cleaned.append("")
+        cleaned.append(line)
+        index += 1
+    return "\n".join(cleaned).strip()
+
+
+def _is_leading_notice_line(line: str) -> bool:
+    stripped = line.strip()
+    if not stripped:
+        return True
+    text = markdown_to_text(stripped).strip()
+    lower = text.lower()
+    if not text:
+        return True
+    if stripped.startswith("![") or re.match(r"^\[!\\?\[", stripped):
+        return True
+    notice_markers = (
+        "from wikipedia, the free encyclopedia",
+        "this article needs additional citations",
+        "this section contains instructions or advice",
+        "find sources:",
+        "learn how and when to remove this message",
+        "维基百科，自由的百科全书",
+        "本页使用了标题或全文手工转换",
+        "此條目或其章節",
+        "请协助補充",
+        "致使用者：请搜索",
+    )
+    return any(marker in lower or marker in text for marker in notice_markers)
 
 
 def _best_scored_node(root: html.HtmlElement, topology: LinkTopologyAnalyzer) -> html.HtmlElement | None:
@@ -406,7 +656,7 @@ def _is_content_like_node(node: etree._Element) -> bool:
     attrs = " ".join(filter(None, [node.get("class"), node.get("id")]))
     if CONTENT_CLASS_RE.search(attrs):
         return True
-    return (node.get("id") or "").lower() in {"content", "content-inner", "artibody", "article_content"}
+    return (node.get("id") or "").lower() in {"content", "content-inner", "artibody", "article_content", "ucap-content"}
 
 
 def _is_link_cluster_noise(node: etree._Element, topology: LinkTopologyAnalyzer) -> bool:

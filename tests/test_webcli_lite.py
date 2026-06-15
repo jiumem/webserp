@@ -131,7 +131,7 @@ class WebCliLiteFetchTest(unittest.TestCase):
             return FetchResponse(text=html, status=200, url="https://example.com/news/climate-policy", headers={})
 
         stdout = io.StringIO()
-        with patch("webserp.webcli_lite.fetch_response", fake_fetch_response), patch("sys.stdout", stdout):
+        with patch("webserp.webcli_lite.fetch_page_response", fake_fetch_response), patch("sys.stdout", stdout):
             code = webcli_main(["fetch", "https://example.com/news/climate-policy"])
 
         self.assertEqual(code, 0)
@@ -149,7 +149,7 @@ class WebCliLiteFetchTest(unittest.TestCase):
             return FetchResponse(text=html, status=200, url="https://example.com/news/climate-policy", headers={})
 
         stdout = io.StringIO()
-        with patch("webserp.webcli_lite.fetch_response", fake_fetch_response), patch("sys.stdout", stdout):
+        with patch("webserp.webcli_lite.fetch_page_response", fake_fetch_response), patch("sys.stdout", stdout):
             code = webcli_main([
                 "fetch",
                 "https://example.com/news/climate-policy",
@@ -167,7 +167,7 @@ class WebCliLiteFetchTest(unittest.TestCase):
             return FetchResponse(text=html, status=200, url="https://example.com/news/climate-policy", headers={})
 
         stdout = io.StringIO()
-        with patch("webserp.webcli_lite.fetch_response", fake_fetch_response), patch("sys.stdout", stdout):
+        with patch("webserp.webcli_lite.fetch_page_response", fake_fetch_response), patch("sys.stdout", stdout):
             code = webcli_main(["fetch", "https://example.com/news/climate-policy", "--json"])
 
         self.assertEqual(code, 0)

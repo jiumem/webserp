@@ -9,6 +9,7 @@ from .errors import ChallengePageError
 
 _TITLE_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
 _SCRIPT_STYLE_RE = re.compile(r"<(script|style)[^>]*>.*?</\1>", re.IGNORECASE | re.DOTALL)
+_SCRIPT_RE = re.compile(r"<script[^>]*>.*?</script>", re.IGNORECASE | re.DOTALL)
 _TAG_RE = re.compile(r"<[^>]+>")
 
 
@@ -111,7 +112,7 @@ def _visible_text(text: str) -> str:
 
 
 def _script_text_ratio(text: str) -> float:
-    script_chars = sum(len(match.group(0)) for match in _SCRIPT_STYLE_RE.finditer(text))
+    script_chars = sum(len(match.group(0)) for match in _SCRIPT_RE.finditer(text))
     return script_chars / max(1, len(text))
 
 

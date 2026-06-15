@@ -12,12 +12,13 @@ from typing import Any
 from urllib.parse import urlparse
 
 from . import __version__
-from .client import DEFAULT_MAX_BODY_BYTES, fetch_response
+from .client import DEFAULT_MAX_BODY_BYTES
 from .engines import ALL_ENGINES
 from .errors import BlockedUrlError, WebSerpError
 from .search import search
 from .security import LOCAL_AGENT_DNS_POLICY, STRICT_DNS_POLICY, is_blocked_ip, validate_http_url
 from .webfetch import extract
+from .webfetch.service import fetch_page_response
 from .webfetch.types import Link, WebFetchResult
 
 SERPER_DEFAULT_ENGINES = ["bing_cn", "brave"]
@@ -299,7 +300,7 @@ async def _load_page(args: argparse.Namespace) -> dict[str, Any]:
     if not args.url:
         raise CliError("ArgumentError", "URL is required unless --html-file or --stdin is used")
 
-    response = await fetch_response(
+    response = await fetch_page_response(
         args.url,
         timeout=args.timeout,
         proxy=args.proxy,

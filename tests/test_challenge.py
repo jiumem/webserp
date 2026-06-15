@@ -38,6 +38,20 @@ class ChallengeDetectionTest(unittest.TestCase):
         self.assertFalse(is_js_only_shell(html))
         self.assertFalse(is_challenge_page(html))
 
+    def test_does_not_count_large_css_as_script_shell(self):
+        html = """
+        <html>
+          <head><style>{css}</style></head>
+          <body>
+            <article><p>A concise but valid article with enough visible text for extraction.</p></article>
+            <script>console.log("analytics")</script>
+          </body>
+        </html>
+        """.format(css="body{color:#111;}" * 1000)
+
+        self.assertFalse(is_js_only_shell(html))
+        self.assertFalse(is_challenge_page(html))
+
     def test_does_not_flag_normal_captcha_article(self):
         html = """
         <html>
