@@ -18,37 +18,10 @@ class WebCliLiteSerperTest(unittest.TestCase):
 
         async def fake_search(**kwargs):
             calls.append(kwargs)
-            return {
-                "query": kwargs["query"],
-                "number_of_results": 2,
-                "results": [
-                    {"title": "A", "url": "https://example.com/a", "content": "a", "engine": "bing_cn"},
-                    {"title": "B", "url": "https://example.com/b", "content": "b", "engine": "brave"},
-                ],
-                "suggestions": [],
-                "unresponsive_engines": [],
-            }
-
-        stdout = io.StringIO()
-        with patch("webserp.webcli_lite.search", fake_search), patch("sys.stdout", stdout):
-            code = webcli_main(["serper", "agent query", "--no-indent"])
-
-        self.assertEqual(code, 0)
-        self.assertEqual(calls[0]["engine_names"], ["bing_cn", "brave"])
-        self.assertEqual(calls[0]["max_results"], 5)
-        payload = json.loads(stdout.getvalue())
-        self.assertEqual(payload["meta"]["engines"], ["bing_cn", "brave"])
-        self.assertEqual(payload["meta"]["max_results_per_engine"], 5)
-
-    def test_serper_fallback_runs_only_when_results_are_insufficient(self):
-        calls = []
-
-        async def fake_search(**kwargs):
-            calls.append(kwargs)
-            if len(calls) == 1:
-                results = [{"title": "A", "url": "https://example.com/a", "content": "a", "engine": "bing_cn"}]
-            else:
-                results = [{"title": "C", "url": "https://example.com/c", "content": "c", "engine": "yahoo"}]
+            results = [
+                {"title": f"R{index}", "url": f"https://example.com/{index}", "content": "", "engine": kwargs["engine_names"][index % 2]}
+                for index in range(10)
+            ]
             return {
                 "query": kwargs["query"],
                 "number_of_results": len(results),
@@ -59,14 +32,73 @@ class WebCliLiteSerperTest(unittest.TestCase):
 
         stdout = io.StringIO()
         with patch("webserp.webcli_lite.search", fake_search), patch("sys.stdout", stdout):
-            code = webcli_main(["serper", "agent query", "--fallback", "yahoo,presearch", "--no-indent"])
+            code = webcli_main(["serper", "agent query", "--no-indent"])
+
+        self.assertEqual(code, 0)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["engine_names"], ["bing_cn", "brave"])
+        self.assertEqual(calls[0]["max_results"], 5)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["meta"]["engines"], ["bing_cn", "brave"])
+        self.assertEqual(payload["meta"]["max_results_per_engine"], 5)
+
+    def test_serper_default_fallback_runs_only_when_results_are_insufficient(self):
+        calls = []
+
+        async def fake_search(**kwargs):
+            calls.append(kwargs)
+            if len(calls) == 1:
+                results = [
+                    {"title": "A1", "url": "https://example.com/a1", "content": "a", "engine": "bing_cn"},
+                    {"title": "A2", "url": "https://example.com/a2", "content": "a", "engine": "bing_cn"},
+                ]
+            else:
+                results = [
+                    {"title": "F1", "url": "https://example.com/f1", "content": "f", "engine": "yahoo"},
+                    {"title": "F2", "url": "https://example.com/f2", "content": "f", "engine": "presearch"},
+                ]
+            return {
+                "query": kwargs["query"],
+                "number_of_results": len(results),
+                "results": results,
+                "suggestions": [],
+                "unresponsive_engines": [],
+            }
+
+        stdout = io.StringIO()
+        with patch("webserp.webcli_lite.search", fake_search), patch("sys.stdout", stdout):
+            code = webcli_main(["serper", "agent query", "--no-indent"])
 
         self.assertEqual(code, 0)
         self.assertEqual(calls[0]["engine_names"], ["bing_cn", "brave"])
         self.assertEqual(calls[1]["engine_names"], ["yahoo", "presearch"])
         payload = json.loads(stdout.getvalue())
-        self.assertEqual(payload["number_of_results"], 2)
+        self.assertEqual(payload["number_of_results"], 4)
+        self.assertEqual([item["title"] for item in payload["results"]], ["A1", "F1", "A2", "F2"])
         self.assertEqual(payload["meta"]["fallback_used"], ["yahoo", "presearch"])
+
+    def test_serper_no_fallback_disables_default_fallback(self):
+        calls = []
+
+        async def fake_search(**kwargs):
+            calls.append(kwargs)
+            return {
+                "query": kwargs["query"],
+                "number_of_results": 1,
+                "results": [{"title": "A", "url": "https://example.com/a", "content": "a", "engine": "bing_cn"}],
+                "suggestions": [],
+                "unresponsive_engines": [],
+            }
+
+        stdout = io.StringIO()
+        with patch("webserp.webcli_lite.search", fake_search), patch("sys.stdout", stdout):
+            code = webcli_main(["serper", "agent query", "--no-fallback", "--no-indent"])
+
+        self.assertEqual(code, 0)
+        self.assertEqual(len(calls), 1)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["number_of_results"], 1)
+        self.assertEqual(payload["meta"]["fallback_used"], [])
 
     def test_serper_invalid_engine_returns_json_error(self):
         stderr = io.StringIO()
@@ -92,8 +124,10 @@ class WebCliLiteSerperTest(unittest.TestCase):
 class WebCliLiteFetchTest(unittest.TestCase):
     def test_fetch_defaults_to_markdown_stdout(self):
         html = (FIXTURE_DIR / "article_basic.html").read_text(encoding="utf-8")
+        calls = []
 
         async def fake_fetch_response(*args, **kwargs):
+            calls.append(kwargs)
             return FetchResponse(text=html, status=200, url="https://example.com/news/climate-policy", headers={})
 
         stdout = io.StringIO()
@@ -101,9 +135,30 @@ class WebCliLiteFetchTest(unittest.TestCase):
             code = webcli_main(["fetch", "https://example.com/news/climate-policy"])
 
         self.assertEqual(code, 0)
+        self.assertEqual(calls[0]["dns_policy"], "local-agent")
         output = stdout.getvalue()
         self.assertIn("# Climate Policy Update", output)
         self.assertNotIn('"links"', output)
+
+    def test_fetch_can_request_strict_dns_policy(self):
+        html = (FIXTURE_DIR / "article_basic.html").read_text(encoding="utf-8")
+        calls = []
+
+        async def fake_fetch_response(*args, **kwargs):
+            calls.append(kwargs)
+            return FetchResponse(text=html, status=200, url="https://example.com/news/climate-policy", headers={})
+
+        stdout = io.StringIO()
+        with patch("webserp.webcli_lite.fetch_response", fake_fetch_response), patch("sys.stdout", stdout):
+            code = webcli_main([
+                "fetch",
+                "https://example.com/news/climate-policy",
+                "--dns-policy",
+                "strict",
+            ])
+
+        self.assertEqual(code, 0)
+        self.assertEqual(calls[0]["dns_policy"], "strict")
 
     def test_fetch_json_excludes_links_by_default(self):
         html = (FIXTURE_DIR / "article_basic.html").read_text(encoding="utf-8")

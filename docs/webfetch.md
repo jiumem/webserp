@@ -14,9 +14,10 @@
 - 只安装 `webcli-lite` 命令；旧 `webserp` / `webfetch` 命令不再保留。
 - 新增 Python API：`webserp.webfetch.webfetch(url)` 和纯离线抽取 API：`webserp.webfetch.extract(html, url)`。
 - 复用现有安全请求层：HTTP(S) URL 校验、私网/本地地址拦截、逐跳 redirect 校验、响应体大小上限、challenge 页面识别。
+- `fetch` / `map` 默认使用本地 Agent DNS policy，允许 hostname 解析到 `198.18.0.0/15` fake-ip，仍阻断 IP literal、localhost、真实私网和内部地址。
 - `fetch` 默认输出 Markdown，不混入 links；`map` 单独输出 links JSON。
 - `map` 支持 `json`、`jsonl`、`tsv` 输出和 `--fields` 字段选择；大文档站推荐 TSV/JSONL 落盘后用 `rg` 筛选。
-- `serper` 默认只跑 `bing_cn,brave`，每个引擎 5 条结果。
+- `serper` 默认先跑 `bing_cn,brave`，每个引擎 5 条结果；结果不足时才补 `yahoo,presearch`，并按 rank 交错合并多引擎结果。
 - 所有 `webcli-lite` 子命令支持 stdout 管道和 `-o/--output` 落盘，默认不覆盖已有文件。
 - `webcli-lite` 失败路径输出 JSON 到 stderr。
 - 覆盖英文、中文、代码教程、复杂表格、SPA 数据岛、目录链接、旧式 layout table 的离线金标测试。
@@ -99,7 +100,7 @@ TSV 每行一条 link，包含稳定 `id`、类型、可见文本和 URL，便�
 - `tests/fixtures/webfetch/*.html`：覆盖代表性页面结构。
 - `tests/fixtures/webfetch/*.expected.json`：Codex 标记的金标，包含 facts、must_exclude、结构计数、链接类型、候选 winner 期望。
 - `tests/test_webfetch.py`：逐 fixture 校验 Markdown 事实包含、噪声排除、元数据、候选策略、CJK、表格、代码块、图片、结构化数据和链接拓扑。
-- 额外 adversarial tests 覆盖 unsafe URL scheme、正常短文被数据岛污染、layout table 导航列混入、Markdown label escaping 和代码 fence escaping。
+- 额外 adversarial tests 覆盖 unsafe URL scheme、正常短文被数据岛污染、layout table 导航列混入、Markdown label escaping、代码 fence escaping、fake-ip DNS policy、真实文档站正文容器和裸 JS challenge。
 - `tests/test_webcli_lite.py`：覆盖统一 CLI 的默认 `serper` 引擎、fallback、`fetch` 默认 Markdown、`fetch --json` 不含 links、`map` 默认 link types、TSV/JSONL 输出、字段选择、输出文件保护和 JSON 错误协议。
 - `tests/test_client.py`：校验 `fetch_response()` 在保持 `fetch()` 兼容的同时返回 final URL、status、headers。
 
@@ -110,10 +111,11 @@ TSV 每行一条 link，包含稳定 `id`、类型、可见文本和 URL，便�
 - `PYTHONPATH=src python -m pytest -q` 全量通过。
 - `PYTHONPATH=src python -m compileall -q src tests` 通过。
 - `fetch()` 字符串返回兼容不破坏。
-- `webcli-lite serper` 默认 `bing_cn,brave`，每个引擎 5 条。
+- `webcli-lite serper` 默认 `bing_cn,brave`，每个引擎 5 条；结果不足时使用 `yahoo,presearch` fallback。
+- `webcli-lite serper` 多引擎结果按 rank 交错输出。
 - `webcli-lite fetch` 默认输出 Markdown；只有 `--format html` 输出 HTML。
 - `webcli-lite map` 默认只返回 `content,directory` links，`--all` 才返回全部。
 - `webcli-lite map --format tsv/jsonl` 可生成 grep-friendly 本地链接索引，不需要把大结果集塞入会话上下文。
 - `-o/--output` 支持本地落盘，默认不覆盖已有文件。
 - 离线金标覆盖英文、中文、代码、表格、SPA 数据岛、目录链接、旧式 layout table。
-- challenge、私网 URL、超大响应体等安全约束仍由现有 fetch 层统一处理。
+- challenge、私网 URL、超大响应体、fake-ip DNS 和裸 JS challenge 等安全约束仍由现有 fetch 层统一处理。

@@ -15,8 +15,10 @@
 - 输出结构：`url`、`final_url`、`status`、`title`、`description`、`markdown`、`text`、`links`、`images`、`code_blocks`、`structured_data`、`meta`。
 - 链接拓扑：输出 `content`、`directory`、`navigation`、`noise` 分类。
 - 表格：支持标准 table 与 rowspan/colspan 展平；layout table 避免误转为数据表。
-- `webcli-lite serper` 默认 `bing_cn,brave`，每个引擎 5 条。
+- `webcli-lite serper` 默认 `bing_cn,brave`，每个引擎 5 条；结果不足时才补 `yahoo,presearch`。
+- `webcli-lite serper` 多引擎结果按 rank 交错合并，避免单引擎强占前排。
 - `webcli-lite fetch` 默认只输出 Markdown；links 由 `webcli-lite map` 单独输出。
+- `webcli-lite fetch/map` 默认使用 `local-agent` DNS policy，兼容本地 fake-ip DNS，服务端式严格校验可用 `--dns-policy strict`。
 - `webcli-lite map` 默认返回 `content,directory`，可通过 `--type` 或 `--all` 扩展。
 - `webcli-lite map` 支持 `--format tsv/jsonl` 和 `--fields`，用于把大文档站链接集落盘后用 `rg` 筛选。
 - 所有 `webcli-lite` 子命令支持 stdout 管道、`-o/--output`、`--force` 和 JSON 错误协议。
@@ -38,11 +40,12 @@
 - [x] 新增 `webcli-lite serper/fetch/map` 统一入口、文件输出、map 分离和 Agent-safe 默认值。
 - [x] 新增 grep-friendly map 输出，支持 TSV/JSONL、字段选择、稳定 id、domain/path 派生字段。
 - [x] 更新 skill，要求大 map 结果优先写入 `mktemp -d` 临时目录，再用 `rg` 筛选少量候选。
+- [x] 根据 live acceptance 修复 fake-ip DNS、搜索结果交错合并、真实文档站空正文和裸 JS challenge。
 - [x] 本地验证和 PR 提交材料准备。
 
 ## 当前验证结果
 
-- `PYTHONPATH=src python -m pytest -q`：通过，66 个测试。
+- `PYTHONPATH=src python -m pytest -q`：通过，81 个测试。
 - `PYTHONPATH=src python -m compileall -q src tests`：通过。
 - `git diff --check`：通过。
 - `python /Users/nuc8/.codex/skills/.system/skill-creator/scripts/quick_validate.py skill/webserp`：通过。

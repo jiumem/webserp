@@ -181,6 +181,74 @@ inside
         self.assertIn("![alt \\](bad)](https://example.com/i.png)", result.markdown)
         self.assertNotIn("[bad ](text]", result.markdown)
 
+    def test_role_main_with_many_links_is_not_poisoned(self):
+        links = "".join(f'<a href="/library/asyncio-task.html#item-{index}">目录项 {index}</a>' for index in range(30))
+        html = f"""
+        <html><body>
+          <div class="document">
+            <div class="body" role="main">
+              <h1>协程与任务</h1>
+              <nav class="contents">{links}</nav>
+              <section>
+                <h2>任务组</h2>
+                <p>TaskGroup 类组合了任务创建 API 和等待所有任务完成的便捷可靠方式。</p>
+                <p>当任务组中的任务失败时，其余任务会被取消，并以异常组的形式报告错误。</p>
+              </section>
+            </div>
+          </div>
+        </body></html>
+        """
+
+        result = extract(html, "https://docs.python.org/zh-cn/3/library/asyncio-task.html")
+
+        self.assertIn("协程与任务", result.markdown)
+        self.assertIn("TaskGroup 类组合了任务创建 API", result.markdown)
+        self.assertNotIn("empty_extraction", result.meta["warnings"])
+
+    def test_id_content_container_with_many_links_is_not_poisoned(self):
+        links = "".join(f'<a href="/abs/1706.03762v{index}">version {index}</a>' for index in range(20))
+        html = f"""
+        <html><body>
+          <main>
+            <div id="content">
+              <div id="content-inner">
+                <h1>Attention Is All You Need</h1>
+                <p>Authors introduce the Transformer, a model architecture based solely on attention mechanisms.</p>
+                <p>The model dispenses with recurrence and convolutions while improving parallelization.</p>
+                <div class="versions">{links}</div>
+              </div>
+            </div>
+          </main>
+        </body></html>
+        """
+
+        result = extract(html, "https://arxiv.org/abs/1706.03762")
+
+        self.assertIn("Attention Is All You Need", result.markdown)
+        self.assertIn("based solely on attention mechanisms", result.markdown)
+        self.assertNotIn("empty_extraction", result.meta["warnings"])
+
+    def test_article_body_container_with_many_links_is_not_poisoned(self):
+        links = "".join(f'<a href="/finance/related-{index}.shtml">相关阅读 {index}</a>' for index in range(20))
+        html = f"""
+        <html><body>
+          <div class="article-content clearfix" id="article_content">
+            <div class="article" id="artibody">
+              <h1>新能源汽车出海2.0：从卖车到建生态</h1>
+              <p>中国车企正在从单纯出口整车，转向建设供应链、渠道和售后生态。</p>
+              <p>欧洲政策、关税和本地化要求推动企业重新设计出海路径。</p>
+              <aside>{links}</aside>
+            </div>
+          </div>
+        </body></html>
+        """
+
+        result = extract(html, "https://finance.sina.com.cn/jjxw/2026-02-19/doc.shtml")
+
+        self.assertIn("新能源汽车出海2.0", result.markdown)
+        self.assertIn("转向建设供应链、渠道和售后生态", result.markdown)
+        self.assertNotIn("empty_extraction", result.meta["warnings"])
+
 
 def _table_row_count(markdown: str) -> int:
     return sum(1 for line in markdown.splitlines() if line.startswith("|") and line.endswith("|"))

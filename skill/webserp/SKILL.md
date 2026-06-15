@@ -23,6 +23,8 @@ webcli-lite map "URL_FROM_RESULT"
 
 - engines: `bing_cn,brave`
 - max results: 每个引擎 5 条
+- fallback: 默认结果不足 10 条时补 `yahoo,presearch`
+- merge: 多引擎结果按 rank 交错输出
 - output: JSON stdout
 - errors: JSON stderr
 
@@ -49,9 +51,9 @@ webcli-lite serper "query" --profile cn-deep
 英文搜索时保留专有名词、错误码、论文题名、库名和版本号，不要翻译它们：
 
 ```bash
-webcli-lite serper "pydantic v2 model_validator examples"
-webcli-lite serper "\"Attention Is All You Need\" paper PDF"
-webcli-lite serper "site:docs.python.org asyncio TaskGroup"
+webcli-lite serper "pydantic v2 model_validator examples" --profile en
+webcli-lite serper "\"Attention Is All You Need\" paper PDF" --profile en
+webcli-lite serper "site:docs.python.org asyncio TaskGroup" --profile en
 ```
 
 中英文都可能有价值时，先跑用户原始语言；结果不足时再换语言重查一次。不要同时对同一问题连续跑多组宽泛 query。
@@ -76,7 +78,7 @@ webcli-lite serper "site:docs.python.org asyncio TaskGroup"
 - `yahoo`, `presearch`: 默认不足时的低频 fallback。
 - `google`, `duckduckgo`, `startpage`, `mojeek`: 非默认英文/国际补充，只在明确需要时使用。
 
-扩展引擎只在默认结果不足、用户要求更广覆盖、或需要特定中文来源时使用：
+默认 fallback 只在结果不足时触发。其他扩展引擎只在默认结果不足、用户要求更广覆盖、或需要特定中文来源时使用：
 
 ```bash
 webcli-lite serper "query" --fallback yahoo,presearch
@@ -115,6 +117,12 @@ webcli-lite fetch "https://example.com/article" --max-markdown-chars 0
 ```
 
 不要因为单页截断就扩大搜索范围。
+
+`fetch` 默认使用本地 Agent DNS policy，可兼容本机代理的 fake-ip DNS。只有明确需要服务端式严格 DNS 校验时才加：
+
+```bash
+webcli-lite fetch "https://example.com/article" --dns-policy strict
+```
 
 离线 HTML 只用于本地已有页面，`--base-url` 必须是原始公共 HTTP(S) 页面 URL，不能用 localhost、私网 IP 或 `file://`：
 
@@ -253,4 +261,5 @@ webcli-lite map "URL" -o links.json
 - 不做浏览器渲染。
 - 不做批量爬取。
 - `fetch` 和 `map` 只接受 HTTP(S) URL，并阻断 localhost、私网和内部地址。
+- `fetch` / `map` 默认允许 hostname 解析到 `198.18.0.0/15` fake-ip；IP literal、localhost 和真实私网地址仍会被阻断。
 - challenge / antispider / safety check 页面视为失败；换搜索结果，不要重试刷请求。
