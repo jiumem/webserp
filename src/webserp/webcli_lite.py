@@ -4,16 +4,18 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import ipaddress
 import json
 import sys
 from pathlib import Path
 from typing import Any
 
 from . import __version__
-from .client import DEFAULT_MAX_BODY_BYTES, FetchResponse, fetch_response
+from .client import DEFAULT_MAX_BODY_BYTES, fetch_response
 from .engines import ALL_ENGINES
-from .errors import WebSerpError
+from .errors import BlockedUrlError, WebSerpError
 from .search import search
+from .security import is_blocked_ip, validate_http_url
 from .webfetch import extract
 from .webfetch.types import Link, WebFetchResult
 
@@ -66,6 +68,13 @@ def main(argv: list[str] | None = None) -> int:
     except CliError as exc:
         _write_json_error(exc.error_type, exc.message, details=exc.details)
         return exc.code
+    except SystemExit as exc:
+        if isinstance(exc.code, int):
+            return exc.code
+        if exc.code is None:
+            return 0
+        _write_json_error("SystemExit", str(exc.code))
+        return 1
     except WebSerpError as exc:
         _write_json_error(exc.__class__.__name__, str(exc))
         return 2
@@ -82,7 +91,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"webcli-lite {__version__}")
     subparsers = parser.add_subparsers(dest="command")
 
-    serper = subparsers.add_parser("serper", aliases=["search"], help="Search the web and return JSON results")
+    serper = subparsers.add_parser("serper", help="Search the web and return JSON results")
     serper.add_argument("query", nargs="?", help="Search query")
     serper.add_argument("-e", "--engines", default=None, help="Comma-separated engine list")
     serper.add_argument(
@@ -92,9 +101,9 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Engine profile (default: agent)",
     )
     serper.add_argument("--fallback", default=None, help="Comma-separated fallback engines used only when results are insufficient")
-    serper.add_argument("--min-results", type=int, default=10, help="Minimum result count before fallback runs (default: 10)")
-    serper.add_argument("-n", "--max-results", type=int, default=SERPER_DEFAULT_MAX_RESULTS, help="Max results per engine (default: 5)")
-    serper.add_argument("--timeout", type=int, default=10, help="Per-engine timeout in seconds (default: 10)")
+    serper.add_argument("--min-results", type=_non_negative_int, default=10, help="Minimum result count before fallback runs (default: 10)")
+    serper.add_argument("-n", "--max-results", type=_positive_int, default=SERPER_DEFAULT_MAX_RESULTS, help="Max results per engine (default: 5)")
+    serper.add_argument("--timeout", type=_positive_int, default=10, help="Per-engine timeout in seconds (default: 10)")
     serper.add_argument("--proxy", default=None, help="Proxy URL for all requests")
     serper.add_argument("--verbose", action="store_true", help="Show engine success/failure in stderr")
     serper.add_argument("--list-engines", action="store_true", help="Print available engines as JSON")
@@ -110,7 +119,7 @@ def _build_parser() -> argparse.ArgumentParser:
     fetch.add_argument("--html-file", default=None, help="Read HTML from a local file without network access")
     fetch.add_argument("--stdin", action="store_true", help="Read HTML from stdin without network access")
     fetch.add_argument("--base-url", default=None, help="Base URL for offline HTML relative-link resolution")
-    fetch.add_argument("--max-markdown-chars", type=int, default=FETCH_DEFAULT_MAX_MARKDOWN_CHARS, help="Max Markdown/text chars; 0 disables truncation")
+    fetch.add_argument("--max-markdown-chars", type=_non_negative_int, default=FETCH_DEFAULT_MAX_MARKDOWN_CHARS, help="Max Markdown/text chars; 0 disables truncation")
     fetch.add_argument("--include-structured-data", action="store_true", help="Include structured_data in --json output")
     fetch.add_argument("--debug", action="store_true", help="Include extraction candidates in --json output")
     _add_fetch_network_args(fetch)
@@ -121,7 +130,7 @@ def _build_parser() -> argparse.ArgumentParser:
     map_cmd.add_argument("url", nargs="?", help="HTTP(S) URL to fetch")
     map_cmd.add_argument("--type", action="append", default=None, help="Link type to include: content,directory,navigation,noise")
     map_cmd.add_argument("--all", action="store_true", help="Return all link types")
-    map_cmd.add_argument("--max-links", type=int, default=MAP_DEFAULT_MAX_LINKS, help="Max links to return; 0 disables truncation")
+    map_cmd.add_argument("--max-links", type=_non_negative_int, default=MAP_DEFAULT_MAX_LINKS, help="Max links to return; 0 disables truncation")
     map_cmd.add_argument("--html-file", default=None, help="Read HTML from a local file without network access")
     map_cmd.add_argument("--stdin", action="store_true", help="Read HTML from stdin without network access")
     map_cmd.add_argument("--base-url", default=None, help="Base URL for offline HTML relative-link resolution")
@@ -139,10 +148,10 @@ def _add_output_args(parser: argparse.ArgumentParser) -> None:
 
 
 def _add_fetch_network_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--timeout", type=int, default=10, help="Request timeout in seconds (default: 10)")
+    parser.add_argument("--timeout", type=_positive_int, default=10, help="Request timeout in seconds (default: 10)")
     parser.add_argument("--proxy", default=None, help="Proxy URL")
-    parser.add_argument("--max-body-bytes", type=int, default=DEFAULT_MAX_BODY_BYTES, help="Maximum response body size in bytes")
-    parser.add_argument("--retries", type=int, default=0, help="Retries for transient 5xx errors (default: 0)")
+    parser.add_argument("--max-body-bytes", type=_positive_int, default=DEFAULT_MAX_BODY_BYTES, help="Maximum response body size in bytes")
+    parser.add_argument("--retries", type=_non_negative_int, default=0, help="Retries for transient 5xx errors (default: 0)")
 
 
 async def _handle_serper(args: argparse.Namespace) -> int:
@@ -250,14 +259,16 @@ async def _load_page(args: argparse.Namespace) -> dict[str, Any]:
     if getattr(args, "html_file", None):
         if not args.base_url:
             raise CliError("ArgumentError", "--base-url is required with --html-file")
+        base_url = _validate_offline_base_url(args.base_url)
         html_text = Path(args.html_file).read_text(encoding="utf-8")
-        return {"html": html_text, "url": args.base_url, "final_url": args.base_url, "status": 0}
+        return {"html": html_text, "url": base_url, "final_url": base_url, "status": 0}
 
     if getattr(args, "stdin", False):
         if not args.base_url:
             raise CliError("ArgumentError", "--base-url is required with --stdin")
+        base_url = _validate_offline_base_url(args.base_url)
         html_text = sys.stdin.read()
-        return {"html": html_text, "url": args.base_url, "final_url": args.base_url, "status": 0}
+        return {"html": html_text, "url": base_url, "final_url": base_url, "status": 0}
 
     if not args.url:
         raise CliError("ArgumentError", "URL is required unless --html-file or --stdin is used")
@@ -326,6 +337,41 @@ def _validate_engines(engines: list[str]) -> None:
             f"unknown engines: {', '.join(invalid)}",
             details={"available": list(ALL_ENGINES.keys())},
         )
+
+
+def _positive_int(value: str) -> int:
+    parsed = _parse_int(value)
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("must be >= 1")
+    return parsed
+
+
+def _non_negative_int(value: str) -> int:
+    parsed = _parse_int(value)
+    if parsed < 0:
+        raise argparse.ArgumentTypeError("must be >= 0")
+    return parsed
+
+
+def _parse_int(value: str) -> int:
+    try:
+        return int(value, 10)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be an integer") from exc
+
+
+def _validate_offline_base_url(raw: str) -> str:
+    validated = validate_http_url(raw)
+    host = validated.host.lower()
+    if host == "localhost" or host.endswith(".localhost"):
+        raise BlockedUrlError("base URL host is localhost")
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return validated.url
+    if is_blocked_ip(ip):
+        raise BlockedUrlError("base URL uses a private, reserved, or internal address")
+    return validated.url
 
 
 def _parse_csv(value: str | None) -> list[str]:
