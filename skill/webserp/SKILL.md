@@ -1,6 +1,6 @@
 ---
 name: webserp
-description: Use when Codex needs current web search, Markdown page reading, or link discovery through an available `webcli-lite` CLI.
+description: Use for web search, URL-to-Markdown reading, and page link mapping with `webcli-lite`.
 ---
 
 # webcli-lite
